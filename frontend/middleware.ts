@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAdmin } from './lib/admin'
 
 // This file must live at the project root (next to package.json) - Next.js silently
 // ignores middleware.ts placed anywhere else, including inside app/, which is why
@@ -8,7 +9,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-const PROTECTED_PREFIXES = ['/dashboard', '/account']
+const PROTECTED_PREFIXES = ['/dashboard', '/account', '/admin']
 const AUTH_PAGES = ['/login', '/signup']
 
 export async function middleware(request: NextRequest) {
@@ -48,6 +49,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  if (path.startsWith('/admin') && user) {
+    const admin = await isAdmin(user.email)
+    if (!admin) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
   if (isAuthPage && user) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
@@ -58,5 +68,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/account/:path*', '/login', '/signup'],
+  matcher: ['/dashboard/:path*', '/account/:path*', '/admin/:path*', '/login', '/signup'],
 }

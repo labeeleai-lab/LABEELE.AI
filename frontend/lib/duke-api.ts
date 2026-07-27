@@ -78,6 +78,82 @@ export interface DispatchResponse {
   tools_used: string[]
 }
 
+export interface IacStats {
+  status: string
+  total: number
+  validated: number
+}
+
+export interface TrainingStats {
+  data: {
+    total_calls?: number
+    estimated_cost_usd?: number
+    training_samples_available?: number
+    status?: string
+    [key: string]: unknown
+  }
+}
+
+export interface DukeTask {
+  id: string
+  description: string
+  complexity: number
+  agent_name: string
+  status: string
+  result: string | null
+  price_satoshis: number
+}
+
+export interface SubmitFeedbackRequest {
+  request_id: string
+  rating: number
+  comment?: string
+  agent_name: string
+}
+
+export interface PersonaConfig {
+  persona_id: string
+  name: string
+  category: string
+  reputation_multiplier: number
+  min_response_tokens: number
+  max_response_tokens: number
+  temperature: number
+  requires_validation: boolean
+  system_prompt: string
+  validation_keywords: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type PersonaConfigCreate = {
+  persona_id: string
+  name: string
+  system_prompt: string
+} & Partial<
+  Pick<
+    PersonaConfig,
+    'category' | 'reputation_multiplier' | 'min_response_tokens' | 'max_response_tokens' | 'temperature' | 'requires_validation' | 'validation_keywords'
+  >
+>
+
+export type PersonaConfigUpdate = Partial<
+  Pick<
+    PersonaConfig,
+    | 'name'
+    | 'category'
+    | 'reputation_multiplier'
+    | 'min_response_tokens'
+    | 'max_response_tokens'
+    | 'temperature'
+    | 'requires_validation'
+    | 'system_prompt'
+    | 'validation_keywords'
+    | 'is_active'
+  >
+>
+
 export class DukeApiError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message)
@@ -142,4 +218,31 @@ export const dukeApi = {
       { method: 'POST', body: JSON.stringify(body) },
       90_000,
     ),
+
+  // Admin: overview
+  iacStats: () => request<IacStats>('/iac/stats'),
+  trainingStats: () => request<TrainingStats>('/training/stats'),
+
+  // Admin: training controls
+  retrainAgents: () => request<{ status: string }>('/admin/retrain-agents', { method: 'POST' }, 30_000),
+  clearTrainingCache: () => request<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
+
+  // Admin: annotation suite
+  listTasks: (limit = 50) => request<DukeTask[]>(`/tasks?limit=${limit}`),
+  submitFeedback: (body: SubmitFeedbackRequest) =>
+    request<{ status: string; message: string }>('/feedback/submit', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // Admin: data-driven personas
+  listPersonas: () => request<PersonaConfig[]>('/admin/personas'),
+  getPersona: (personaId: string) => request<PersonaConfig>(`/admin/personas/${personaId}`),
+  createPersona: (body: PersonaConfigCreate) =>
+    request<PersonaConfig>('/admin/personas', { method: 'POST', body: JSON.stringify(body) }),
+  updatePersona: (personaId: string, body: PersonaConfigUpdate) =>
+    request<PersonaConfig>(`/admin/personas/${personaId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
 }
