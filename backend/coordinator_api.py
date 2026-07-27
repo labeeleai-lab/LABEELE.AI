@@ -33,8 +33,8 @@ from dotenv import load_dotenv
 
 # FastAPI imports
 from fastapi import (
-    FastAPI, HTTPException, Depends, status, 
-    BackgroundTasks, Request, Form, UploadFile, File
+    FastAPI, HTTPException, Depends, status,
+    BackgroundTasks, Request, Form, UploadFile, File, Header
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -50,6 +50,25 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 # Load environment variables
 load_dotenv()
+
+# ==================== ADMIN AUTH ====================
+# Shared-secret gate for administrative endpoints (training controls, persona
+# CRUD, feedback/task review, stats, training-data upload). This is not user
+# auth - the website's own Supabase-backed admin check already verifies who
+# is calling before a request ever reaches this API. This exists so the raw
+# backend URL by itself isn't a wide-open admin surface to anyone who finds it.
+ADMIN_API_SECRET = os.getenv("ADMIN_API_SECRET")
+
+
+def require_admin_secret(x_admin_secret: Optional[str] = Header(default=None, alias="X-Admin-Secret")):
+    if not ADMIN_API_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin endpoints are not configured on this backend (ADMIN_API_SECRET unset).",
+        )
+    if not x_admin_secret or not secrets.compare_digest(x_admin_secret, ADMIN_API_SECRET):
+        raise HTTPException(status_code=403, detail="Invalid or missing admin credentials.")
+
 
 from tools.agent_toolkit import CodeReader, DiffGenerator, SecurityScanner, CloudArchitectTool
 
@@ -3050,7 +3069,7 @@ async def get_agent_trust(agent_id: str, db: Session = Depends(get_db)):
         }
     }
 
-@app.post("/admin/recalc-scores")
+@app.post("/admin/recalc-scores", dependencies=[Depends(require_admin_secret)])
 async def recalculate_all_scores(db: Session = Depends(get_db)):
     """Maintenance: Update all scores based on recent training"""
     agents = db.query(Agent).all()
@@ -3219,7 +3238,7 @@ async def submit_task(
         # Return a clean JSON error instead of crashing
         return JSONResponse(status_code=500, content={"message": f"Task processing failed: {str(e)}"})
 
-@app.post("/feedback/submit")
+@app.post("/feedback/submit", dependencies=[Depends(require_admin_secret)])
 async def submit_feedback(feedback: FeedbackSubmission):
     """
     Receives human feedback (RLHF) to improve the Duke Model.
@@ -3298,7 +3317,7 @@ async def call_gemini_for_persona(description: str, complexity: int, persona_typ
         logger.error(f"❌ Gemini Persona Error: {e}")
         return f"Error generating response: {str(e)}"
 
-@app.get("/tasks")
+@app.get("/tasks", dependencies=[Depends(require_admin_secret)])
 async def get_tasks(limit: int = 20, db: Session = Depends(get_db)):
     tasks = db.query(Task).order_by(desc(Task.created_at)).limit(limit).all()
     return [{"id": t.id, "description": t.description, "status": t.status, "agent_name": t.agent_name, "result": t.result, "price_satoshis": t.price_satoshis, "complexity": t.complexity} for t in tasks]
@@ -3338,7 +3357,7 @@ async def get_model_status(db: Session = Depends(get_db)):
         "training_samples": ver.training_samples if ver else 0
     }
 
-@app.post("/admin/retrain-agents")
+@app.post("/admin/retrain-agents", dependencies=[Depends(require_admin_secret)])
 async def retrain_all_agents(db: Session = Depends(get_db)):
     """
     Triggers a real training run (data curation + train/val split + early
@@ -3348,7 +3367,7 @@ async def retrain_all_agents(db: Session = Depends(get_db)):
     result = await duke_pipeline.train_model(db)
     return result
 
-@app.post("/admin/clear-cache")
+@app.post("/admin/clear-cache", dependencies=[Depends(require_admin_secret)])
 async def clear_cache(db: Session = Depends(get_db)):
     count = db.query(TrainingData).delete()
     db.commit()
@@ -3411,13 +3430,23 @@ class PersonaConfigUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-@app.get("/admin/personas", response_model=List[PersonaConfigResponse], tags=["Personas"])
+@app.get(
+    "/admin/personas",
+    response_model=List[PersonaConfigResponse],
+    tags=["Personas"],
+    dependencies=[Depends(require_admin_secret)],
+)
 async def list_personas(db: Session = Depends(get_db)):
     """List every data-driven persona (live + admin-created), most recently added first."""
     return db.query(PersonaConfig).order_by(PersonaConfig.persona_id).all()
 
 
-@app.get("/admin/personas/{persona_id}", response_model=PersonaConfigResponse, tags=["Personas"])
+@app.get(
+    "/admin/personas/{persona_id}",
+    response_model=PersonaConfigResponse,
+    tags=["Personas"],
+    dependencies=[Depends(require_admin_secret)],
+)
 async def get_persona(persona_id: str, db: Session = Depends(get_db)):
     row = db.query(PersonaConfig).filter(PersonaConfig.persona_id == persona_id).first()
     if not row:
@@ -3425,7 +3454,13 @@ async def get_persona(persona_id: str, db: Session = Depends(get_db)):
     return row
 
 
-@app.post("/admin/personas", response_model=PersonaConfigResponse, status_code=201, tags=["Personas"])
+@app.post(
+    "/admin/personas",
+    response_model=PersonaConfigResponse,
+    status_code=201,
+    tags=["Personas"],
+    dependencies=[Depends(require_admin_secret)],
+)
 async def create_persona(payload: PersonaConfigCreate, db: Session = Depends(get_db)):
     """Create a brand new persona - e.g. a roadmap persona going live for the first time."""
     existing = db.query(PersonaConfig).filter(PersonaConfig.persona_id == payload.persona_id).first()
@@ -3452,7 +3487,12 @@ async def create_persona(payload: PersonaConfigCreate, db: Session = Depends(get
     return row
 
 
-@app.put("/admin/personas/{persona_id}", response_model=PersonaConfigResponse, tags=["Personas"])
+@app.put(
+    "/admin/personas/{persona_id}",
+    response_model=PersonaConfigResponse,
+    tags=["Personas"],
+    dependencies=[Depends(require_admin_secret)],
+)
 async def update_persona(persona_id: str, payload: PersonaConfigUpdate, db: Session = Depends(get_db)):
     """Edit any field of an existing persona - most importantly system_prompt. Takes effect
     on the very next query, since get_safe_persona() reads this table live."""
@@ -3475,6 +3515,91 @@ async def update_persona(persona_id: str, payload: PersonaConfigUpdate, db: Sess
     db.refresh(row)
     logger.info(f"✅ Updated persona via admin API: {persona_id}")
     return row
+
+
+# ==================== BULK TRAINING DATA IMPORT (ADMIN) ====================
+# Lets the admin bulk-import curated instruction/output examples (parsed
+# client-side from uploaded files/folders) directly into the same
+# TrainingData table RealDukeMLPipeline.train_model() already reads from -
+# the very next retrain automatically picks them up, with the same quality
+# filters (dedup, error markers, min length, low-rated exclusion) applied.
+
+class TrainingExampleIn(BaseModel):
+    instruction: str = Field(..., min_length=1, max_length=20000)
+    output: str = Field(..., min_length=1, max_length=20000)
+    persona_id: Optional[str] = Field(default=None, max_length=64)
+
+
+class TrainingUploadRequest(BaseModel):
+    examples: List[TrainingExampleIn] = Field(..., min_length=1, max_length=2000)
+
+
+class TrainingUploadResponse(BaseModel):
+    inserted: int
+    skipped_duplicate: int
+    skipped_invalid: int
+    total_submitted: int
+
+
+@app.post(
+    "/admin/training-data/upload",
+    response_model=TrainingUploadResponse,
+    tags=["Training"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def upload_training_data(payload: TrainingUploadRequest, db: Session = Depends(get_db)):
+    """Bulk-insert admin-curated instruction/output pairs as TrainingData rows."""
+    existing_descriptions = set()
+    for row in db.query(TrainingData.input_data).all():
+        try:
+            parsed = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            desc = (parsed or {}).get("description", "")
+            if desc:
+                existing_descriptions.add(desc.strip().lower())
+        except Exception:
+            continue
+
+    inserted = 0
+    skipped_duplicate = 0
+    skipped_invalid = 0
+    seen_this_batch = set()
+
+    for example in payload.examples:
+        instruction = example.instruction.strip()
+        output = example.output.strip()
+        if not instruction or not output:
+            skipped_invalid += 1
+            continue
+
+        key = instruction.lower()
+        if key in existing_descriptions or key in seen_this_batch:
+            skipped_duplicate += 1
+            continue
+        seen_this_batch.add(key)
+
+        agent = example.persona_id or "duke-ml"
+        db.add(
+            TrainingData(
+                id=str(uuid.uuid4()),
+                task_id=f"upload-{uuid.uuid4().hex[:12]}",
+                input_data=json.dumps({"description": instruction, "complexity": 5}),
+                output_data=json.dumps({"result": output, "agent": agent}),
+                success=True,
+                agent_name=agent,
+                persona_type=agent,
+            )
+        )
+        inserted += 1
+
+    db.commit()
+    logger.info(f"✅ Bulk training-data upload: {inserted} inserted, {skipped_duplicate} duplicate, {skipped_invalid} invalid")
+    return TrainingUploadResponse(
+        inserted=inserted,
+        skipped_duplicate=skipped_duplicate,
+        skipped_invalid=skipped_invalid,
+        total_submitted=len(payload.examples),
+    )
+
 
 # ----------------- DASHBOARD -----------------
 @app.get("/dashboard")
@@ -4772,41 +4897,12 @@ if __name__ == "__main__":
 """
     return HTMLResponse(content=html)
 
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_panel():
-    """Admin control panel"""
-    admin_html = """
-    <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DUKE Admin Panel</title>
-    <style>
-        /* ... admin styles skipped for brevity, keeping functional structure ... */
-        body { font-family: sans-serif; background: #1a1a2e; color: white; padding: 20px; }
-        button { padding: 10px; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <h1>DUKE Admin Panel</h1>
-    <button onclick="clearCache()">Clear Cache</button>
-    <button onclick="retrain()">Retrain</button>
-    <div id="log"></div>
-    <script>
-        async function clearCache() {
-            await fetch('/admin/clear-cache', {method: 'POST'});
-            document.getElementById('log').innerHTML += 'Cache Cleared<br>';
-        }
-        async function retrain() {
-            await fetch('/admin/retrain-agents', {method: 'POST'});
-            document.getElementById('log').innerHTML += 'Retraining Started<br>';
-        }
-    </script>
-</body>
-</html>
-    """
-    return HTMLResponse(content=admin_html)
+# NOTE: the old public, unauthenticated "/admin" HTML control panel (plain
+# buttons that POSTed straight to /admin/clear-cache and /admin/retrain-agents
+# with no auth at all) has been removed. Admin operations now live behind
+# the real admin portal at labeele.ai/admin (Supabase-gated) and this API's
+# own require_admin_secret dependency - a bare HTML page pointed at this
+# backend can no longer trigger anything.
 
 @app.get("/dashboard-login", response_class=HTMLResponse)
 async def get_dashboard_login():
@@ -5032,7 +5128,7 @@ async def get_model_status(db: Session = Depends(get_db)):
         "training_samples": model_version.training_samples
     }
 
-@app.get("/tasks")
+@app.get("/tasks", dependencies=[Depends(require_admin_secret)])
 async def get_tasks_with_search(query: Optional[str] = None, limit: int = 100, db: Session = Depends(get_db)):
     try:
         tasks_query = db.query(Task).order_by(desc(Task.created_at))
@@ -5051,17 +5147,17 @@ async def get_tasks_with_search(query: Optional[str] = None, limit: int = 100, d
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/training/stats")
+@app.get("/training/stats", dependencies=[Depends(require_admin_secret)])
 async def get_training_stats_api():
     return {"data": get_training_stats()}
 
-@app.post("/admin/clear-cache")
+@app.post("/admin/clear-cache", dependencies=[Depends(require_admin_secret)])
 async def clear_training_cache(db: Session = Depends(get_db)):
     count = db.query(TrainingData).delete()
     db.commit()
     return {"status": "success", "deleted_entries": count}
 
-@app.post("/admin/retrain-agents")
+@app.post("/admin/retrain-agents", dependencies=[Depends(require_admin_secret)])
 async def retrain_all_agents(db: Session = Depends(get_db)):
     try:
         duke_pipeline.model = None
@@ -5070,7 +5166,7 @@ async def retrain_all_agents(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/iac/stats", tags=["IAC System"])
+@app.get("/iac/stats", tags=["IAC System"], dependencies=[Depends(require_admin_secret)])
 async def get_iac_statistics(db: Session = Depends(get_db)):
     try:
         all_training = db.query(TrainingData).all()

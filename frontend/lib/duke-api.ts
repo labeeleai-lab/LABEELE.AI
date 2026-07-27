@@ -172,6 +172,19 @@ export type PersonaConfigUpdate = Partial<
   >
 >
 
+export interface TrainingExample {
+  instruction: string
+  output: string
+  persona_id?: string
+}
+
+export interface TrainingUploadResult {
+  inserted: number
+  skipped_duplicate: number
+  skipped_invalid: number
+  total_submitted: number
+}
+
 export class DukeApiError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message)
@@ -217,6 +230,48 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 10_0
   }
 }
 
+// Admin-only calls never talk to the Duke backend directly from the browser -
+// they go through /api/admin/duke/*, a same-origin Next.js route that
+// re-verifies the caller is a signed-in admin and attaches the backend's
+// shared admin secret server-side. See app/api/admin/duke/[...path]/route.ts.
+async function adminRequest<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(`/api/admin/duke${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+      signal: controller.signal,
+    })
+
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      // no/invalid JSON body
+    }
+
+    if (!res.ok) {
+      const detail =
+        body && typeof body === 'object' && 'error' in body
+          ? String((body as { error: unknown }).error)
+          : res.statusText
+      throw new DukeApiError(detail)
+    }
+
+    return body as T
+  } catch (err) {
+    if (err instanceof DukeApiError) throw err
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new DukeApiError('Duke backend timed out. It can be slow to wake up - try again in a moment.', err)
+    }
+    throw new DukeApiError('Could not reach the Duke backend.', err)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 export const dukeApi = {
   health: () => request<HealthStatus>('/health'),
   modelStatus: () => request<ModelStatus>('/model/status'),
@@ -237,29 +292,35 @@ export const dukeApi = {
       90_000,
     ),
 
-  // Admin: overview
-  iacStats: () => request<IacStats>('/iac/stats'),
-  trainingStats: () => request<TrainingStats>('/training/stats'),
+  // Admin: overview (proxied - see adminRequest above)
+  iacStats: () => adminRequest<IacStats>('/iac/stats'),
+  trainingStats: () => adminRequest<TrainingStats>('/training/stats'),
 
   // Admin: training controls
-  retrainAgents: () => request<RetrainResult>('/admin/retrain-agents', { method: 'POST' }, 60_000),
-  clearTrainingCache: () => request<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
+  retrainAgents: () => adminRequest<RetrainResult>('/admin/retrain-agents', { method: 'POST' }, 60_000),
+  clearTrainingCache: () => adminRequest<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
+  uploadTrainingData: (examples: TrainingExample[]) =>
+    adminRequest<TrainingUploadResult>(
+      '/admin/training-data/upload',
+      { method: 'POST', body: JSON.stringify({ examples }) },
+      30_000,
+    ),
 
   // Admin: annotation suite
-  listTasks: (limit = 50) => request<DukeTask[]>(`/tasks?limit=${limit}`),
+  listTasks: (limit = 50) => adminRequest<DukeTask[]>(`/tasks?limit=${limit}`),
   submitFeedback: (body: SubmitFeedbackRequest) =>
-    request<{ status: string; message: string }>('/feedback/submit', {
+    adminRequest<{ status: string; message: string }>('/feedback/submit', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
 
   // Admin: data-driven personas
-  listPersonas: () => request<PersonaConfig[]>('/admin/personas'),
-  getPersona: (personaId: string) => request<PersonaConfig>(`/admin/personas/${personaId}`),
+  listPersonas: () => adminRequest<PersonaConfig[]>('/admin/personas'),
+  getPersona: (personaId: string) => adminRequest<PersonaConfig>(`/admin/personas/${personaId}`),
   createPersona: (body: PersonaConfigCreate) =>
-    request<PersonaConfig>('/admin/personas', { method: 'POST', body: JSON.stringify(body) }),
+    adminRequest<PersonaConfig>('/admin/personas', { method: 'POST', body: JSON.stringify(body) }),
   updatePersona: (personaId: string, body: PersonaConfigUpdate) =>
-    request<PersonaConfig>(`/admin/personas/${personaId}`, {
+    adminRequest<PersonaConfig>(`/admin/personas/${personaId}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
