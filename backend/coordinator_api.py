@@ -1218,10 +1218,47 @@ adversarial_validator = AdversarialValidator(
 )
 
 # ==================== SAFE PERSONA RESOLVER ====================
+def _persona_row_to_dict(row) -> dict:
+    """Shape a PersonaConfig DB row exactly like a SPECIALIST_PERSONAS[...] entry."""
+    return {
+        "name": row.name,
+        "category": row.category,
+        "reputation_multiplier": row.reputation_multiplier,
+        "min_response_tokens": row.min_response_tokens,
+        "max_response_tokens": row.max_response_tokens,
+        "temperature": row.temperature,
+        "requires_validation": row.requires_validation,
+        "system_prompt": row.system_prompt,
+        "validation_keywords": row.validation_keywords or [],
+    }
+
+
 def get_safe_persona(persona_type: str) -> tuple[str, dict]:
     """
     SAFE lookup - NEVER raises KeyError on missing persona.
+
+    Checks the database first (PersonaConfig - admin-editable at runtime via
+    /admin/personas, including personas that don't exist in the hardcoded
+    dict at all), then falls back to the hardcoded SPECIALIST_PERSONAS dict
+    below exactly as before. The hardcoded dict is intentionally never
+    removed, so a DB outage or empty table can't take personas offline.
     """
+    # Priority 0: Database override / DB-only persona
+    try:
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(PersonaConfig)
+                .filter(PersonaConfig.persona_id == persona_type, PersonaConfig.is_active == True)
+                .first()
+            )
+            if row:
+                return persona_type, _persona_row_to_dict(row)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"⚠️ PersonaConfig DB lookup failed for '{persona_type}', falling back to hardcoded: {e}")
+
     # Priority 1: Exact match
     if persona_type in SPECIALIST_PERSONAS:
         return persona_type, SPECIALIST_PERSONAS[persona_type]
@@ -1367,6 +1404,34 @@ class ModelVersionBase(Base):
     validation_f1 = Column(Float)
     is_production = Column(Boolean, default=False)
     model_info = Column(JSON)
+
+class PersonaConfig(Base):
+    """
+    Data-driven persona definitions. Seeded from SPECIALIST_PERSONAS on first
+    startup (see lifespan()), then admin-editable at runtime via
+    GET/POST/PUT /admin/personas - no code change or redeploy needed to
+    change a persona's behavior or add a new one. get_safe_persona() checks
+    this table before falling back to the hardcoded SPECIALIST_PERSONAS
+    dict, which is intentionally never removed as a safety net.
+    """
+    __tablename__ = "persona_configs"
+    persona_id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False, default="specialist")
+    reputation_multiplier = Column(Float, nullable=False, default=1.5)
+    min_response_tokens = Column(Integer, nullable=False, default=200)
+    max_response_tokens = Column(Integer, nullable=False, default=2000)
+    temperature = Column(Float, nullable=False, default=0.7)
+    requires_validation = Column(Boolean, nullable=False, default=True)
+    system_prompt = Column(Text, nullable=False)
+    validation_keywords = Column(JSON, nullable=False, default=list)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 Base.metadata.create_all(bind=engine)
 
@@ -2187,6 +2252,44 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Error initializing agents: {e}")
     finally:
         db.close()
+
+    # 4. Seed Persona Configs (data-driven personas - admin-editable at runtime
+    # via /admin/personas once seeded; never overwrites an existing row, so
+    # admin edits made after the first startup are never clobbered on restart)
+    db3 = SessionLocal()
+    try:
+        existing_persona_ids = {p.persona_id for p in db3.query(PersonaConfig).all()}
+        seeded_count = 0
+
+        if SPECIALIST_PERSONAS:
+            for persona_id, meta in SPECIALIST_PERSONAS.items():
+                if persona_id not in existing_persona_ids:
+                    logger.info(f"➕ Seeding persona config: {persona_id}")
+                    db3.add(PersonaConfig(
+                        persona_id=persona_id,
+                        name=meta.get("name", persona_id),
+                        category=meta.get("category", "specialist"),
+                        reputation_multiplier=meta.get("reputation_multiplier", 1.5),
+                        min_response_tokens=meta.get("min_response_tokens", 200),
+                        max_response_tokens=meta.get("max_response_tokens", 2000),
+                        temperature=meta.get("temperature", 0.7),
+                        requires_validation=meta.get("requires_validation", True),
+                        system_prompt=meta.get("system_prompt", ""),
+                        validation_keywords=meta.get("validation_keywords", []),
+                        is_active=True,
+                    ))
+                    seeded_count += 1
+
+        if seeded_count > 0:
+            db3.commit()
+            logger.info(f"✅ Seeded {seeded_count} persona config(s) into the database")
+        else:
+            logger.info("✅ All persona configs already present in database")
+    except Exception as e:
+        logger.error(f"❌ Error seeding persona configs: {e}")
+        db3.rollback()
+    finally:
+        db3.close()
 
     logger.info("✅ OpenAI API configured")
     logger.info("✅ REAL Duke Learning Pipeline enabled (PyTorch Neural Network)")
@@ -3096,6 +3199,128 @@ async def clear_cache(db: Session = Depends(get_db)):
     count = db.query(TrainingData).delete()
     db.commit()
     return {"deleted": count}
+
+# ==================== DATA-DRIVEN PERSONAS (ADMIN) ====================
+# CRUD over PersonaConfig (see model + get_safe_persona() above). Lets an
+# admin change a persona's behavior, or add an entirely new persona, at
+# runtime with no code change or redeploy.
+
+class PersonaConfigResponse(BaseModel):
+    persona_id: str
+    name: str
+    category: str
+    reputation_multiplier: float
+    min_response_tokens: int
+    max_response_tokens: int
+    temperature: float
+    requires_validation: bool
+    system_prompt: str
+    validation_keywords: List[str]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PersonaConfigCreate(BaseModel):
+    persona_id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9\-]+$")
+    name: str = Field(..., min_length=1, max_length=100)
+    category: str = Field(default="specialist", max_length=50)
+    reputation_multiplier: float = Field(default=1.5, ge=1.0, le=2.5)
+    min_response_tokens: int = Field(default=200, ge=1, le=8000)
+    max_response_tokens: int = Field(default=2000, ge=1, le=8000)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    requires_validation: bool = True
+    system_prompt: str = Field(..., min_length=1)
+    validation_keywords: List[str] = Field(default_factory=list)
+
+    @field_validator("max_response_tokens")
+    @classmethod
+    def _max_gte_min(cls, v, info):
+        min_tokens = info.data.get("min_response_tokens")
+        if min_tokens is not None and v < min_tokens:
+            raise ValueError("max_response_tokens must be >= min_response_tokens")
+        return v
+
+
+class PersonaConfigUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    category: Optional[str] = Field(default=None, max_length=50)
+    reputation_multiplier: Optional[float] = Field(default=None, ge=1.0, le=2.5)
+    min_response_tokens: Optional[int] = Field(default=None, ge=1, le=8000)
+    max_response_tokens: Optional[int] = Field(default=None, ge=1, le=8000)
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    requires_validation: Optional[bool] = None
+    system_prompt: Optional[str] = Field(default=None, min_length=1)
+    validation_keywords: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+@app.get("/admin/personas", response_model=List[PersonaConfigResponse], tags=["Personas"])
+async def list_personas(db: Session = Depends(get_db)):
+    """List every data-driven persona (live + admin-created), most recently added first."""
+    return db.query(PersonaConfig).order_by(PersonaConfig.persona_id).all()
+
+
+@app.get("/admin/personas/{persona_id}", response_model=PersonaConfigResponse, tags=["Personas"])
+async def get_persona(persona_id: str, db: Session = Depends(get_db)):
+    row = db.query(PersonaConfig).filter(PersonaConfig.persona_id == persona_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found")
+    return row
+
+
+@app.post("/admin/personas", response_model=PersonaConfigResponse, status_code=201, tags=["Personas"])
+async def create_persona(payload: PersonaConfigCreate, db: Session = Depends(get_db)):
+    """Create a brand new persona - e.g. a roadmap persona going live for the first time."""
+    existing = db.query(PersonaConfig).filter(PersonaConfig.persona_id == payload.persona_id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Persona '{payload.persona_id}' already exists")
+
+    row = PersonaConfig(
+        persona_id=payload.persona_id,
+        name=payload.name,
+        category=payload.category,
+        reputation_multiplier=payload.reputation_multiplier,
+        min_response_tokens=payload.min_response_tokens,
+        max_response_tokens=payload.max_response_tokens,
+        temperature=payload.temperature,
+        requires_validation=payload.requires_validation,
+        system_prompt=payload.system_prompt,
+        validation_keywords=payload.validation_keywords,
+        is_active=True,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    logger.info(f"✅ Created new persona via admin API: {payload.persona_id}")
+    return row
+
+
+@app.put("/admin/personas/{persona_id}", response_model=PersonaConfigResponse, tags=["Personas"])
+async def update_persona(persona_id: str, payload: PersonaConfigUpdate, db: Session = Depends(get_db)):
+    """Edit any field of an existing persona - most importantly system_prompt. Takes effect
+    on the very next query, since get_safe_persona() reads this table live."""
+    row = db.query(PersonaConfig).filter(PersonaConfig.persona_id == persona_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+
+    new_min = updates.get("min_response_tokens", row.min_response_tokens)
+    new_max = updates.get("max_response_tokens", row.max_response_tokens)
+    if new_max < new_min:
+        raise HTTPException(status_code=422, detail="max_response_tokens must be >= min_response_tokens")
+
+    for field, value in updates.items():
+        setattr(row, field, value)
+    row.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(row)
+    logger.info(f"✅ Updated persona via admin API: {persona_id}")
+    return row
 
 # ----------------- DASHBOARD -----------------
 @app.get("/dashboard")
