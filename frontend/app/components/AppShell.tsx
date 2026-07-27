@@ -1,9 +1,10 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut } from 'lucide-react'
+import { LogOut, ShieldCheck } from 'lucide-react'
 import { supabaseBrowser } from '@/lib/supabase/client'
 
 const NAV_LINKS = [
@@ -14,6 +15,14 @@ const NAV_LINKS = [
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/status')
+      .then((res) => res.json())
+      .then((body) => setIsAdmin(Boolean(body.isAdmin)))
+      .catch(() => setIsAdmin(false))
+  }, [])
 
   const handleSignOut = async () => {
     await supabaseBrowser?.auth.signOut()
@@ -41,15 +50,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {link.label}
               </Link>
             ))}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className={`flex items-center gap-1.5 text-sm transition-colors ${
+                  pathname.startsWith('/admin') ? 'text-gold-500 font-medium' : 'text-gray-300 hover:text-gold-500'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Admin
+              </Link>
+            )}
           </nav>
 
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 text-sm text-gray-300 hover:text-gold-500 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="sm:hidden flex items-center gap-1.5 text-sm text-gold-500"
+                aria-label="Admin"
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </Link>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-2 text-sm text-gray-300 hover:text-gold-500 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
