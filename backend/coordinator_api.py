@@ -1771,90 +1771,239 @@ class RealDukeMLPipeline:
         
         return {"response": response, "trust_score": trust_val}
 
-    async def train_model(self, db: Session):
+    def _load_low_rated_task_ids(self, min_rating: int = 3) -> set:
         """
-        V2 Rigorous Training: Includes LoRA injection and Hard-Negative Mining.
+        Reads the feedback log (populated by POST /feedback/submit) and returns
+        the set of task/request ids rated below min_rating (out of 5), so
+        train_model() can exclude examples a human already flagged as bad.
+        Previously this feedback was collected but never actually used by
+        training - it only sat in a JSONL file.
         """
+        low_rated = set()
+        try:
+            if not os.path.exists(FEEDBACK_LOG_FILE):
+                return low_rated
+            with open(FEEDBACK_LOG_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("rating", 5) < min_rating and entry.get("request_id"):
+                            low_rated.add(entry["request_id"])
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read feedback log for training filter: {e}")
+        return low_rated
+
+    async def train_model(self, db: Session) -> dict:
+        """
+        V2 Rigorous Training: LoRA injection, feedback-aware data curation, a
+        real train/validation split, and early stopping.
+
+        Replaces the previous version, which trained on 100% of raw
+        TrainingData rows (including literal "Error: ..." responses),
+        for a fixed 20 epochs with no validation set at all, and then
+        stored a hardcoded validation_accuracy=0.96 regardless of what the
+        model actually did. That accuracy number was never real - anyone
+        looking at /model/status was seeing a fabricated metric.
+        """
+        import random
+
         try:
             training_data = db.query(TrainingData).all()
-            if len(training_data) < 10:
-                logger.warning(f"⚠️ Not enough samples for V2: {len(training_data)} (need 10+)")
-                return
 
-            logger.info(f"🧠 DUKE V2.0 PROGRESSIVE TRAINING STARTING with {len(training_data)} samples")
-            
-            # 1. Hard-Negative Mining Data Preparation
-            descriptions = []
-            for td in tqdm(training_data, desc="Mining Data Structure"):
-                try:
-                    inp = json.loads(td.input_data) if isinstance(td.input_data, str) else td.input_data
-                    descriptions.append(inp.get("description", str(inp)))
-                except: descriptions.append(str(td.input_data))
+            # 1. Data-quality filtering: drop error/placeholder responses,
+            # too-short responses, and exact-duplicate descriptions.
+            ERROR_MARKERS = ("error:", "not initialized", "completely unavailable", "no response received")
+            low_rated_ids = self._load_low_rated_task_ids()
 
-            self.embedder.build_vocab(descriptions)
-            
-            X, Y = [], []
-            for td in tqdm(training_data, desc="Encoding Latent Space"):
+            seen_descriptions = set()
+            quality_samples = []
+            skipped_error = skipped_short = skipped_duplicate = skipped_low_rated = 0
+
+            for td in training_data:
                 try:
                     inp = json.loads(td.input_data) if isinstance(td.input_data, str) else td.input_data
                     out = json.loads(td.output_data) if isinstance(td.output_data, str) else td.output_data
-                    
-                    x_emb = self.embedder.embed(inp.get("description", str(inp)))
-                    y_emb = self.embedder.embed(out.get("result", str(out)))
-                    
+                except Exception:
+                    continue
+
+                description = str(inp.get("description", inp)).strip()
+                result = str(out.get("result", out)).strip()
+
+                if td.task_id in low_rated_ids:
+                    skipped_low_rated += 1
+                    continue
+                if any(marker in result.lower() for marker in ERROR_MARKERS):
+                    skipped_error += 1
+                    continue
+                if len(result) < 20:
+                    skipped_short += 1
+                    continue
+                dedup_key = description.lower()
+                if dedup_key in seen_descriptions:
+                    skipped_duplicate += 1
+                    continue
+
+                seen_descriptions.add(dedup_key)
+                quality_samples.append((description, result))
+
+            logger.info(
+                f"🧹 Data curation: {len(quality_samples)} usable / {len(training_data)} total "
+                f"(skipped {skipped_error} error-responses, {skipped_short} too-short, "
+                f"{skipped_duplicate} duplicates, {skipped_low_rated} low-rated)"
+            )
+
+            if len(quality_samples) < 10:
+                logger.warning(f"⚠️ Not enough quality samples: {len(quality_samples)} (need 10+)")
+                return {
+                    "status": "skipped",
+                    "reason": "insufficient_quality_samples",
+                    "usable_samples": len(quality_samples),
+                    "total_samples": len(training_data),
+                }
+
+            logger.info(f"🧠 DUKE V2.0 TRAINING STARTING with {len(quality_samples)} quality samples")
+
+            # 2. Train/validation split (85/15, shuffled) - the previous version
+            # trained and "validated" on the exact same data, which can't
+            # actually detect overfitting.
+            random.shuffle(quality_samples)
+            split_idx = max(1, int(len(quality_samples) * 0.85))
+            train_set = quality_samples[:split_idx]
+            val_set = quality_samples[split_idx:] or quality_samples[-1:]
+
+            self.embedder.build_vocab([desc for desc, _ in quality_samples])
+
+            def encode(subset):
+                X, Y = [], []
+                for desc, result in subset:
+                    x_emb = self.embedder.embed(desc)
+                    y_emb = self.embedder.embed(result)
                     X.append(x_emb)
                     Y.append(y_emb)
-                    
-                    if len(str(out)) > 50:
-                        self.generator.add_response(x_emb, str(out), metadata={"complexity": 10})
-                except: continue
+                    if len(result) > 50:
+                        self.generator.add_response(x_emb, result, metadata={"complexity": 10})
+                return (
+                    torch.FloatTensor(np.array(X)).to(self.device),
+                    torch.FloatTensor(np.array(Y)).to(self.device),
+                )
 
-            X_tensor = torch.FloatTensor(np.array(X)).to(self.device)
-            Y_tensor = torch.FloatTensor(np.array(Y)).to(self.device)
+            X_train, Y_train = encode(train_set)
+            X_val, Y_val = encode(val_set)
 
-            # 2. LoRA Injection & Model Setup
-            # Using the modular apply_lora helper if available, or native setup
+            # 3. LoRA Injection & Model Setup
             self.model = EnhancedDukeModel(self.config).to(self.device)
-            self.model.train()
-            
-            optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.learning_rate)
+            optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=self.config.learning_rate,
+                weight_decay=self.config.weight_decay,
+            )
             criterion = nn.SmoothL1Loss()
-            trust_criterion = nn.BCELoss() # For the Trust Head
+            trust_criterion = nn.BCELoss()  # For the Trust Head
 
-            # 3. Training Loop with Progress Bars
-            for epoch in tqdm(range(20), desc="Duke V2 Training Epochs"):
+            # 4. Training loop with early stopping on validation loss, instead
+            # of a fixed epoch count that ignores whether the model is
+            # actually still improving.
+            best_val_loss = float("inf")
+            best_state = None
+            patience, patience_counter = 5, 0
+            max_epochs = 40
+            epochs_run = 0
+
+            for epoch in tqdm(range(max_epochs), desc="Duke V2 Training Epochs"):
+                epochs_run = epoch + 1
+                self.model.train()
                 optimizer.zero_grad()
-                
-                # V2 Forward Pass
-                embeddings, trust_scores = self.model(X_tensor)
-                
-                # Multi-Task Loss: Alignment + Trust Calibration
-                recon_loss = criterion(embeddings, Y_tensor)
-                target_trust = torch.ones_like(trust_scores) # Real data = high trust
+
+                embeddings, trust_scores = self.model(X_train)
+                recon_loss = criterion(embeddings, Y_train)
+                target_trust = torch.ones_like(trust_scores)  # Real data = high trust
                 trust_loss = trust_criterion(trust_scores, target_trust)
-                
-                total_loss = recon_loss + (0.1 * trust_loss)
+
+                total_loss = recon_loss + (self.config.trust_weight * trust_loss)
                 total_loss.backward()
                 optimizer.step()
-                
                 self.stats["recent_loss"] = total_loss.item()
-            
+
+                self.model.eval()
+                with torch.no_grad():
+                    val_embeddings, _ = self.model(X_val)
+                    val_loss = criterion(val_embeddings, Y_val).item()
+
+                if val_loss < best_val_loss - 1e-4:
+                    best_val_loss = val_loss
+                    best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        logger.info(f"⏹️ Early stopping at epoch {epochs_run} (no val improvement for {patience} epochs)")
+                        break
+
+            # Restore the checkpoint with the best validation loss, not
+            # necessarily whichever epoch happened to run last.
+            if best_state is not None:
+                self.model.load_state_dict(best_state)
+            self.model.eval()
+
+            # 5. Real validation metric: mean cosine similarity between
+            # predicted and target embeddings on the held-out validation
+            # set, mapped from [-1, 1] to a [0, 1] "accuracy-like" score.
+            # This replaces the previous hardcoded validation_accuracy=0.96.
+            with torch.no_grad():
+                val_embeddings, _ = self.model(X_val)
+                cos_sim = F.cosine_similarity(val_embeddings, Y_val, dim=-1)
+                validation_accuracy = float(((cos_sim.mean() + 1) / 2).clamp(0, 1).item())
+
             self.model_version += 1
             self.save_checkpoint()
-            
-            # Save Versioning
+
             model_version = ModelVersionBase(
                 id=str(uuid.uuid4()),
                 version_number=self.model_version,
-                training_samples=len(training_data),
-                validation_accuracy=0.96, # Improved for V2
+                training_samples=len(quality_samples),
+                validation_accuracy=validation_accuracy,
                 is_production=True,
-                model_info={"vocab": self.embedder.vocab_size, "peft_enabled": True}
+                model_info={
+                    "vocab": self.embedder.vocab_size,
+                    "peft_enabled": True,
+                    "epochs_run": epochs_run,
+                    "train_samples": len(train_set),
+                    "val_samples": len(val_set),
+                    "best_val_loss": best_val_loss,
+                    "total_samples_considered": len(training_data),
+                    "skipped_error": skipped_error,
+                    "skipped_short": skipped_short,
+                    "skipped_duplicate": skipped_duplicate,
+                    "skipped_low_rated": skipped_low_rated,
+                },
             )
             db.add(model_version)
             db.commit()
-            
-            logger.info(f"✅ Duke V2.0 TRAINED & DEPLOYED (LoRA Rank: {self.config.lora_rank})")
+
+            logger.info(
+                f"✅ Duke V2.0 TRAINED & DEPLOYED (LoRA Rank: {self.config.lora_rank}, "
+                f"epochs: {epochs_run}, val_accuracy: {validation_accuracy:.3f})"
+            )
+
+            return {
+                "status": "success",
+                "model_version": self.model_version,
+                "epochs_run": epochs_run,
+                "train_samples": len(train_set),
+                "val_samples": len(val_set),
+                "validation_accuracy": validation_accuracy,
+                "best_val_loss": best_val_loss,
+                "total_samples_considered": len(training_data),
+                "skipped_error": skipped_error,
+                "skipped_short": skipped_short,
+                "skipped_duplicate": skipped_duplicate,
+                "skipped_low_rated": skipped_low_rated,
+            }
 
         except Exception as e:
             logger.error(f"❌ V2 Training failed: {e}")
@@ -3191,8 +3340,13 @@ async def get_model_status(db: Session = Depends(get_db)):
 
 @app.post("/admin/retrain-agents")
 async def retrain_all_agents(db: Session = Depends(get_db)):
-    await duke_pipeline.train_model(db)
-    return {"status": "training_triggered"}
+    """
+    Triggers a real training run (data curation + train/val split + early
+    stopping - see RealDukeMLPipeline.train_model) and returns what actually
+    happened, rather than a fire-and-forget "training_triggered" message.
+    """
+    result = await duke_pipeline.train_model(db)
+    return result
 
 @app.post("/admin/clear-cache")
 async def clear_cache(db: Session = Depends(get_db)):

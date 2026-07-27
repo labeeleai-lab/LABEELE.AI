@@ -5,7 +5,7 @@ import { Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
 import StatusCard from '../../components/StatusCard'
-import { dukeApi, DukeApiError, type ModelStatus, type LearningStatus, type TrainingStats } from '@/lib/duke-api'
+import { dukeApi, DukeApiError, type ModelStatus, type LearningStatus, type TrainingStats, type RetrainResult } from '@/lib/duke-api'
 
 function ConfirmButton({
   label,
@@ -69,6 +69,7 @@ export default function AdminTrainingPage() {
   const [learning, setLearning] = useState<{ data?: LearningStatus; loading: boolean; error?: string }>({ loading: true })
   const [stats, setStats] = useState<{ data?: TrainingStats; loading: boolean; error?: string }>({ loading: true })
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [retrainResult, setRetrainResult] = useState<RetrainResult | null>(null)
 
   const refresh = () => {
     setModel({ loading: true })
@@ -92,9 +93,18 @@ export default function AdminTrainingPage() {
 
   const handleRetrain = async () => {
     setNotice(null)
+    setRetrainResult(null)
     try {
-      await dukeApi.retrainAgents()
-      setNotice({ type: 'success', message: 'Retraining triggered.' })
+      const result = await dukeApi.retrainAgents()
+      setRetrainResult(result)
+      if (result.status === 'skipped') {
+        setNotice({
+          type: 'error',
+          message: `Skipped - only ${result.usable_samples} usable sample(s) after quality filtering (need 10+).`,
+        })
+      } else {
+        setNotice({ type: 'success', message: `Training run complete - model v${result.model_version}.` })
+      }
       refresh()
     } catch (err) {
       setNotice({ type: 'error', message: err instanceof DukeApiError ? err.message : 'Failed to trigger retraining.' })
@@ -156,9 +166,14 @@ export default function AdminTrainingPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <GlassCard>
           <h2 className="font-semibold text-white mb-2">Retrain agents</h2>
-          <p className="text-gray-400 text-sm mb-5">
-            Triggers the in-process retraining pipeline against samples collected so far. This is
-            separate from the offline LoRA fine-tune script (<code className="text-xs">train_duke_offline.py</code>),
+          <p className="text-gray-400 text-sm mb-3">
+            Runs a real training pass: filters out error responses, too-short answers, duplicates,
+            and anything rated 1-2 stars in Annotate; splits what&apos;s left 85/15 into train/validation
+            sets; and stops early once validation stops improving, rather than training a fixed
+            number of epochs regardless of overfitting.
+          </p>
+          <p className="text-gray-500 text-xs mb-5">
+            Separate from the offline LoRA fine-tune script (<code>train_duke_offline.py</code>),
             which runs as its own standalone GPU job and can&apos;t be triggered from here.
           </p>
           <ConfirmButton label="Retrain agents" confirmLabel="Click again to confirm" icon={RefreshCw} onConfirm={handleRetrain} />
@@ -172,6 +187,40 @@ export default function AdminTrainingPage() {
           <ConfirmButton label="Clear cache" confirmLabel="Click again to confirm" icon={Trash2} tone="danger" onConfirm={handleClearCache} />
         </GlassCard>
       </div>
+
+      {retrainResult && retrainResult.status === 'success' && (
+        <GlassCard className="mt-6">
+          <h2 className="font-semibold text-white mb-4">Last training run</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Validation accuracy</div>
+              <div className="text-lg font-bold text-gold-500">
+                {((retrainResult.validation_accuracy ?? 0) * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Epochs run</div>
+              <div className="text-lg font-bold text-white">{retrainResult.epochs_run}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Train / val samples</div>
+              <div className="text-lg font-bold text-white">
+                {retrainResult.train_samples} / {retrainResult.val_samples}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Model version</div>
+              <div className="text-lg font-bold text-white">v{retrainResult.model_version}</div>
+            </div>
+          </div>
+          <div className="text-sm text-gray-400">
+            Considered {retrainResult.total_samples_considered} total samples - excluded{' '}
+            {retrainResult.skipped_error} error-responses, {retrainResult.skipped_short} too-short,{' '}
+            {retrainResult.skipped_duplicate} duplicates, and {retrainResult.skipped_low_rated} rated
+            low in Annotate.
+          </div>
+        </GlassCard>
+      )}
     </AdminShell>
   )
 }

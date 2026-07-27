@@ -94,6 +94,24 @@ export interface TrainingStats {
   }
 }
 
+export interface RetrainResult {
+  status: 'success' | 'skipped'
+  reason?: string
+  model_version?: number
+  epochs_run?: number
+  train_samples?: number
+  val_samples?: number
+  validation_accuracy?: number
+  best_val_loss?: number
+  total_samples_considered?: number
+  usable_samples?: number
+  total_samples?: number
+  skipped_error?: number
+  skipped_short?: number
+  skipped_duplicate?: number
+  skipped_low_rated?: number
+}
+
 export interface DukeTask {
   id: string
   description: string
@@ -224,7 +242,7 @@ export const dukeApi = {
   trainingStats: () => request<TrainingStats>('/training/stats'),
 
   // Admin: training controls
-  retrainAgents: () => request<{ status: string }>('/admin/retrain-agents', { method: 'POST' }, 30_000),
+  retrainAgents: () => request<RetrainResult>('/admin/retrain-agents', { method: 'POST' }, 60_000),
   clearTrainingCache: () => request<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
 
   // Admin: annotation suite
