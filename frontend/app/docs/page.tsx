@@ -3,10 +3,10 @@ import SiteFooter from '../components/SiteFooter'
 import GlassCard from '../components/GlassCard'
 
 const ENDPOINTS = [
-  { method: 'POST', path: '/agency/dispatch', description: 'Send a prompt and get routed to the best-matching specialist automatically.' },
-  { method: 'POST', path: '/tasks/submit', description: 'Submit a task to a specific specialist by id, with a complexity score (1-10).' },
-  { method: 'GET', path: '/agents', description: 'List all specialist agents and their current status.' },
-  { method: 'GET', path: '/model/status', description: 'Check whether the underlying model is ready or still training.' },
+  { method: 'POST', path: '/agency/dispatch', description: 'Send a prompt to DUKE and get routed to the best-matching persona automatically.' },
+  { method: 'POST', path: '/tasks/submit', description: 'Submit a task to a specific DUKE persona by id, with a complexity score (1-10).' },
+  { method: 'GET', path: '/agents', description: 'List DUKE’s live specialist personas and their current status.' },
+  { method: 'GET', path: '/model/status', description: 'Check whether DUKE is ready or still training.' },
   { method: 'GET', path: '/health', description: 'Basic service health check.' },
 ]
 
@@ -17,11 +17,11 @@ export default function DocsPage() {
       <main className="bg-royal-blue-900 min-h-screen">
         <section className="px-6 lg:px-8 py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-4xl font-bold text-white mb-4">Getting started</h1>
+            <h1 className="text-4xl font-bold text-white mb-4">Getting started with DUKE</h1>
             <p className="text-lg text-gray-400 mb-12">
-              LABEELE.AI is used from the dashboard&apos;s query interface after you sign up &mdash;
-              no API key management needed. This page documents what&apos;s happening under the hood
-              for anyone integrating directly.
+              DUKE is the single controller model behind LABEELE.AI &mdash; it&apos;s used from the
+              dashboard&apos;s query interface after you sign up, no API key management needed. This
+              page documents what&apos;s happening under the hood for anyone integrating directly.
             </p>
 
             <GlassCard className="mb-10">
@@ -32,26 +32,26 @@ export default function DocsPage() {
             </GlassCard>
 
             <GlassCard className="mb-10">
-              <h2 className="text-xl font-semibold text-white mb-4">2. Choose a specialist</h2>
+              <h2 className="text-xl font-semibold text-white mb-4">2. Choose a persona, or let DUKE pick</h2>
               <p className="text-gray-400 text-sm leading-relaxed">
-                From the dashboard, pick one of the six specialist personas &mdash; security, ML, systems,
-                backend, DevOps, or vision &mdash; or describe your task and let the router match it
-                automatically.
+                From the dashboard, pick one of DUKE&apos;s six live personas &mdash; security, ML,
+                systems, backend, DevOps, or vision &mdash; or describe your task and let DUKE route
+                it to the persona best suited to it automatically.
               </p>
             </GlassCard>
 
             <GlassCard className="mb-16">
               <h2 className="text-xl font-semibold text-white mb-4">3. Send your query</h2>
               <p className="text-gray-400 text-sm leading-relaxed">
-                Responses come from a locally-run specialist model, so a query can take up to a
-                minute to complete, especially the first one after the service has been idle.
+                Responses come from DUKE&apos;s locally-run model, so a query can take up to a minute
+                to complete, especially the first one after the service has been idle.
               </p>
             </GlassCard>
 
             <h2 className="text-2xl font-bold text-white mb-6">API reference</h2>
             <p className="text-gray-400 mb-8">
-              Core endpoints exposed by the backend service. All are unauthenticated at the network
-              level &mdash; access control happens at the application layer.
+              Core endpoints exposed by DUKE&apos;s backend service. All are unauthenticated at the
+              network level &mdash; access control happens at the application layer.
             </p>
 
             <div className="space-y-4">
