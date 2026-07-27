@@ -17,9 +17,12 @@ export default function AboutPage() {
               once.
             </p>
             <p className="text-lg text-gray-300 leading-relaxed mb-12">
-              LABEELE.AI takes a different approach: six focused specialist personas, each scoped
-              to one domain, routed to automatically or chosen directly. The goal is answers that
-              read like they came from someone who actually works in that field.
+              LABEELE.AI is built around DUKE, a single model that acts as a controller rather
+              than a generalist &mdash; it identifies the task in front of it and injects the
+              specialist persona best suited to solve it, routed automatically or chosen
+              directly. The goal is answers that read like they came from someone who actually
+              works in that field, and a system that keeps growing every time DUKE learns a new
+              persona.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
