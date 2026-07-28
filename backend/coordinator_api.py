@@ -2632,7 +2632,10 @@ async def stream_logs(request: Request):
 from pydantic import BaseModel
 from typing import Optional
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+# JWT_SECRET is already defined above (line ~192) with a fail-closed startup
+# guard - this used to redefine it with an insecure hardcoded fallback and no
+# guard, silently overwriting that safety check for every JWT operation in
+# this file. Removed (security audit); JWT_ALGORITHM kept for the functions below.
 JWT_ALGORITHM = "HS256"
 
 class AuthRequest(BaseModel):
@@ -2974,25 +2977,14 @@ except ImportError:
     print("⚠️ GPUtil not installed. Install with: pip install gputil")
 
 
-@app.post("/auth/buyer/login")
-async def buyer_login(request: BuyerLoginRequest, db: Session = Depends(get_db)):
-    if request.buyer_id and request.password == "securepassword123":
-        user = db.query(User).filter(User.user_id == request.buyer_id).first()
-        if not user:
-            user = User(id=str(uuid.uuid4()), user_id=request.buyer_id, user_type="buyer", password_hash=request.password)
-            db.add(user)
-            db.commit()
-        token = jwt.encode({"user_id": request.buyer_id, "user_type": "buyer"}, "your-secret-key", algorithm="HS256")
-        return {"access_token": token, "token_type": "bearer", "user_id": request.buyer_id}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
-
-@app.post("/auth/agent/login")
-async def agent_login(credentials: dict, db: Session = Depends(get_db)):
-    agent_name = credentials.get("agent_name")
-    if agent_name and credentials.get("password") == "securepassword123":
-        token = jwt.encode({"agent_name": agent_name, "user_type": "agent"}, "your-secret-key", algorithm="HS256")
-        return {"access_token": token, "token_type": "bearer", "agent_name": agent_name}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+# NOTE: /auth/buyer/login and /auth/agent/login were removed (security audit).
+# Both accepted a hardcoded literal password ("securepassword123") for ANY
+# buyer_id/agent_name, auto-created a User row with the plaintext password
+# copied into password_hash, and signed the resulting JWT with a second
+# hardcoded string ("your-secret-key") completely independent of the real,
+# properly-configured JWT_SECRET - i.e. a permanent, unrotatable auth bypass
+# sitting in this file's source, which is public on GitHub. Unused by the
+# frontend (confirmed via search - real auth is Supabase, see frontend/lib/supabase).
 
 # --- MATCHING & TRUST ENDPOINTS ---
 
