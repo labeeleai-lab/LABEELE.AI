@@ -43,9 +43,10 @@ from fastapi.staticfiles import StaticFiles
 
 # SQLAlchemy imports
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, 
+    create_engine, Column, String, Integer, Float,
     DateTime, Boolean, JSON, Text, desc, text, Index
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 # Load environment variables
@@ -1450,6 +1451,38 @@ class PersonaConfig(Base):
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+KNOWLEDGE_EMBED_DIM = 384  # tied to sentence-transformers/all-MiniLM-L6-v2 - see backend/knowledge.py
+
+class KnowledgeChunk(Base):
+    """
+    Persistent per-agent (or DUKE-global, when persona_id is NULL) knowledge
+    used for retrieval-augmented generation. A "document" as seen in the admin
+    UI is just every row sharing one source_id - there's no separate
+    documents table. Chunked/embedded/stored via backend/knowledge.py,
+    retrieved in /tasks/submit via retrieve_relevant_chunks().
+    """
+    __tablename__ = "knowledge_chunks"
+    id = Column(String, primary_key=True, index=True)
+    source_id = Column(String, nullable=False, index=True)
+    source_name = Column(String, nullable=False)
+    source_type = Column(String, nullable=False)  # "text" | "markdown" | "pdf"
+    persona_id = Column(String, nullable=True, index=True)  # NULL = DUKE-global
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    content_length = Column(Integer, nullable=False)
+    embedding = Column(Vector(KNOWLEDGE_EMBED_DIM), nullable=False)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index(
+            "ix_knowledge_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
 Base.metadata.create_all(bind=engine)
@@ -3135,7 +3168,24 @@ async def submit_task(
         if not final_response:
             logger.info(f"🧠 Asking LOCAL DUKE BRAIN for {target_agent}")
             try:
-                prompt = f"Persona: {target_agent}\nTask: {task_data.description}"
+                # Persona system prompt (DB-backed via get_safe_persona, previously never
+                # called here at all) + retrieved knowledge (per-agent + DUKE-global,
+                # see backend/knowledge.py) replace the old bare "Persona: X\nTask: Y"
+                # string - this is the actual RAG wiring for the knowledge system.
+                _, persona = get_safe_persona(target_agent)
+                prompt = persona["system_prompt"]
+
+                try:
+                    chunks = knowledge_lib.retrieve_relevant_chunks(db, KnowledgeChunk, target_agent, task_data.description)
+                    if chunks:
+                        context_block = "\n\n".join(f"[Reference {i+1}]\n{c.content}" for i, c in enumerate(chunks))
+                        prompt += f"\n\nRelevant reference material:\n{context_block}"
+                except Exception as retrieval_error:
+                    logger.warning(f"⚠️ Knowledge retrieval failed, continuing without it: {retrieval_error}")
+
+                prompt += f"\n\nTask: {task_data.description}"
+                if len(prompt) > 6000:
+                    prompt = prompt[:6000]
 
                 if duke_brain and duke_brain.model is not None:
                     raw_response = duke_brain.generate_response(prompt)
@@ -3596,6 +3646,210 @@ async def upload_training_data(payload: TrainingUploadRequest, db: Session = Dep
         skipped_invalid=skipped_invalid,
         total_submitted=len(payload.examples),
     )
+
+
+# ==================== KNOWLEDGE SYSTEM - PHASE 1 (ADMIN) ====================
+# Persistent, per-agent (or DUKE-global when persona_id is null) knowledge
+# base with real retrieval-augmented generation. Documents are chunked,
+# embedded (backend/knowledge.py), and stored as KnowledgeChunk rows; a
+# "document" in the admin UI is just every row sharing one source_id.
+# retrieve_relevant_chunks() is wired into the live /tasks/submit below.
+
+import knowledge as knowledge_lib
+
+KNOWLEDGE_MAX_TEXT_CHARS = knowledge_lib.MAX_TEXT_CHARS
+KNOWLEDGE_MAX_PDF_BYTES = knowledge_lib.MAX_PDF_BYTES
+
+
+class KnowledgeUploadRequest(BaseModel):
+    persona_id: Optional[str] = Field(default=None, max_length=64)
+    source_name: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(..., pattern=r"^(text|markdown|pdf)$")
+    text: Optional[str] = None
+    file_base64: Optional[str] = None
+
+    @field_validator("file_base64")
+    @classmethod
+    def _require_matching_payload(cls, v, info):
+        content_type = info.data.get("content_type")
+        if content_type == "pdf" and not v:
+            raise ValueError("file_base64 is required when content_type is 'pdf'")
+        return v
+
+
+class KnowledgeUploadResponse(BaseModel):
+    source_id: str
+    chunks_created: int
+    total_characters: int
+
+
+class KnowledgeSourceSummary(BaseModel):
+    source_id: str
+    source_name: str
+    source_type: str
+    persona_id: Optional[str]
+    chunk_count: int
+    created_at: datetime
+    preview: str
+
+
+class KnowledgeChunkDetail(BaseModel):
+    id: str
+    chunk_index: int
+    content: str
+    content_length: int
+
+
+def _require_known_persona(persona_id: Optional[str], db: Session):
+    if persona_id is None:
+        return
+    exists = db.query(PersonaConfig).filter(PersonaConfig.persona_id == persona_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found")
+
+
+@app.post(
+    "/admin/knowledge/upload",
+    response_model=KnowledgeUploadResponse,
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def upload_knowledge(payload: KnowledgeUploadRequest, db: Session = Depends(get_db)):
+    _require_known_persona(payload.persona_id, db)
+
+    if payload.content_type == "pdf":
+        import base64
+        try:
+            file_bytes = base64.b64decode(payload.file_base64)
+        except Exception:
+            raise HTTPException(status_code=422, detail="file_base64 is not valid base64")
+        if len(file_bytes) > KNOWLEDGE_MAX_PDF_BYTES:
+            raise HTTPException(status_code=413, detail=f"PDF exceeds {KNOWLEDGE_MAX_PDF_BYTES // (1024*1024)}MB limit")
+        try:
+            text = knowledge_lib.extract_pdf_text(file_bytes)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not extract text from PDF: {e}")
+    else:
+        if not payload.text:
+            raise HTTPException(status_code=422, detail="text is required for content_type 'text'/'markdown'")
+        text = payload.text
+
+    if len(text) > KNOWLEDGE_MAX_TEXT_CHARS:
+        raise HTTPException(status_code=413, detail=f"Content exceeds {KNOWLEDGE_MAX_TEXT_CHARS} character limit")
+
+    chunks = knowledge_lib.chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=422, detail="No usable content found after chunking")
+
+    try:
+        vectors = knowledge_lib.embed_chunks(chunks)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    source_id = str(uuid.uuid4())
+    for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        db.add(
+            KnowledgeChunk(
+                id=str(uuid.uuid4()),
+                source_id=source_id,
+                source_name=payload.source_name,
+                source_type=payload.content_type,
+                persona_id=payload.persona_id,
+                chunk_index=i,
+                content=chunk,
+                content_length=len(chunk),
+                embedding=vector,
+            )
+        )
+    db.commit()
+
+    logger.info(f"✅ Knowledge uploaded: '{payload.source_name}' -> {len(chunks)} chunks (persona={payload.persona_id or 'GLOBAL'})")
+    return KnowledgeUploadResponse(source_id=source_id, chunks_created=len(chunks), total_characters=len(text))
+
+
+@app.get(
+    "/admin/knowledge",
+    response_model=List[KnowledgeSourceSummary],
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def list_knowledge(scope: str, persona_id: Optional[str] = None, db: Session = Depends(get_db)):
+    if scope not in ("global", "agent"):
+        raise HTTPException(status_code=422, detail="scope must be 'global' or 'agent'")
+    if scope == "agent" and not persona_id:
+        raise HTTPException(status_code=422, detail="persona_id is required when scope='agent'")
+
+    filter_persona = None if scope == "global" else persona_id
+    rows = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.persona_id == filter_persona)
+        .order_by(KnowledgeChunk.source_id, KnowledgeChunk.chunk_index)
+        .all()
+    )
+
+    sources: dict[str, KnowledgeSourceSummary] = {}
+    for row in rows:
+        if row.source_id not in sources:
+            sources[row.source_id] = KnowledgeSourceSummary(
+                source_id=row.source_id,
+                source_name=row.source_name,
+                source_type=row.source_type,
+                persona_id=row.persona_id,
+                chunk_count=0,
+                created_at=row.created_at,
+                preview=row.content[:200],
+            )
+        sources[row.source_id].chunk_count += 1
+
+    return sorted(sources.values(), key=lambda s: s.created_at, reverse=True)
+
+
+@app.get(
+    "/admin/knowledge/sources/{source_id}/chunks",
+    response_model=List[KnowledgeChunkDetail],
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def get_knowledge_source_chunks(source_id: str, db: Session = Depends(get_db)):
+    rows = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.source_id == source_id)
+        .order_by(KnowledgeChunk.chunk_index)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Source '{source_id}' not found")
+    return [
+        KnowledgeChunkDetail(id=r.id, chunk_index=r.chunk_index, content=r.content, content_length=r.content_length)
+        for r in rows
+    ]
+
+
+@app.delete(
+    "/admin/knowledge/sources/{source_id}",
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def delete_knowledge_source(source_id: str, db: Session = Depends(get_db)):
+    deleted = db.query(KnowledgeChunk).filter(KnowledgeChunk.source_id == source_id).delete()
+    db.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Source '{source_id}' not found")
+    return {"status": "success", "deleted_chunks": deleted}
+
+
+@app.delete(
+    "/admin/knowledge/chunks/{chunk_id}",
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def delete_knowledge_chunk(chunk_id: str, db: Session = Depends(get_db)):
+    row = db.query(KnowledgeChunk).filter(KnowledgeChunk.id == chunk_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Chunk '{chunk_id}' not found")
+    db.delete(row)
+    db.commit()
+    return {"status": "success"}
 
 
 # ----------------- DASHBOARD -----------------
@@ -4924,155 +5178,12 @@ async def get_task(task_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
-@app.post("/tasks/submit")
-async def submit_task(
-    task_data: TaskSubmission, 
-    background_tasks: BackgroundTasks, 
-    db: Session = Depends(get_db)
-):
-    """
-    Processes a task using Google Gemini API (Primary) with Duke Brain fallback.
-    """
-    try:
-        logger.info(f"📥 RECEIVED TASK: {task_data.description[:60]}...")
-        
-        target_agent = task_data.target_agent
-        
-        # 1. Matching Engine (Auto-Router)
-        if not target_agent or target_agent == "Auto-Router":
-            try:
-                # Simple keyword matching if full MatchingEngine isn't available
-                matcher = MatchingEngine(db)
-                match_result = matcher.find_best_agent(task_data.description, task_data.complexity)
-                if match_result:
-                    target_agent = match_result["agent"].name
-                    logger.info(f"🎯 Auto-Matched Agent: {target_agent} (Score: {match_result['match_score']})")
-                else:
-                    target_agent = "duke-ml"
-            except Exception as e:
-                logger.warning(f"⚠️ Router failed, defaulting to duke-ml: {e}")
-                target_agent = "duke-ml"
-        
-        # 2. Execution Logic (Memory -> Duke)
-        final_response = None
-        response_source = "unknown"
-
-        # A. Check Cache first
-        try:
-            query = text("SELECT output_data FROM training_data WHERE input_data = :prompt LIMIT 1")
-            exact_prompt = json.dumps({"description": task_data.description, "complexity": task_data.complexity})
-            result = db.execute(query, {"prompt": exact_prompt}).fetchone()
-            if result:
-                data = json.loads(result[0]) if isinstance(result[0], str) else result[0]
-                if isinstance(data, str): data = json.loads(data)
-                final_response = data.get("result")
-                response_source = "cache"
-                logger.info("✅ Found EXACT cached response")
-        except Exception: pass
-
-        # B. Local Duke Brain
-        if not final_response:
-            logger.info(f"🧠 Asking LOCAL DUKE BRAIN for {target_agent}")
-            try:
-                prompt = f"Persona: {target_agent}\nTask: {task_data.description}"
-
-                if duke_brain and duke_brain.model is not None:
-                    raw_response = duke_brain.generate_response(prompt)
-                    final_response = f"⚡ [DUKE-LOCAL]: {raw_response}"
-                    response_source = "duke_local"
-                    logger.info("🧠 Duke processed task successfully on Local/GPU.")
-                else:
-                    final_response = "Error: Duke Brain is not initialized."
-            except Exception as duke_error:
-                logger.error(f"❌ Duke Brain failed: {duke_error}")
-                final_response = "Error: System completely unavailable."
-
-        # 3. Save to Database
-        agent_record = db.query(Agent).filter(Agent.name == target_agent).first()
-        reputation = agent_record.reputation_multiplier if agent_record else 1.0
-        price = int(task_data.complexity * 1_000_000 * reputation)
-        
-        task_id = str(uuid.uuid4())
-        new_task = Task(
-            id=task_id,
-            description=task_data.description,
-            agent_name=target_agent,
-            status="completed",
-            result=final_response,
-            complexity=task_data.complexity,
-            price_satoshis=price,
-            completed_at=datetime.now(timezone.utc),
-            buyer_id=task_data.buyer_id or "anon"
-        )
-        db.add(new_task)
-        
-        # Save Training Data
-        td = TrainingData(
-            id=str(uuid.uuid4()),
-            task_id=task_id,
-            input_data=json.dumps({"description": task_data.description, "complexity": task_data.complexity}),
-            output_data=json.dumps({"result": final_response, "agent": target_agent}),
-            success=True,
-            agent_name=target_agent,
-            persona_type=target_agent
-        )
-        db.add(td)
-        
-        if agent_record:
-            agent_record.total_tasks_completed += 1
-            agent_record.balance_satoshis += price
-        
-        db.commit()
-
-        # === 4. MEMORY HARVESTING (Training Data Save) ===
-        if final_response and response_source == "gemini_cloud":
-            try:
-                import os
-                force_memory_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "duke_training_memory.json")
-                
-                entry = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "instruction": f"Persona: {target_agent}\nTask: {task_data.description}",
-                    "output": final_response
-                }
-
-                current_data = []
-                if os.path.exists(force_memory_path):
-                    try:
-                        with open(force_memory_path, "r", encoding="utf-8") as f:
-                            current_data = json.load(f)
-                    except: current_data = [] 
-                
-                current_data.append(entry)
-                with open(force_memory_path, "w", encoding="utf-8") as f:
-                    json.dump(current_data, f, indent=2)
-
-                logger.info(f"📝 [MEMORY] Saved to {force_memory_path} | Count: {len(current_data)}")
-            except Exception as log_err:
-                logger.error(f"⚠️ Memory save failed: {log_err}")
-
-        # 5. Return Result
-        confidence_map = {
-            "cache": 0.98,
-            "gemini_cloud": 0.95,
-            "duke_local": 0.75,
-            "unknown": 0.5
-        }
-        confidence_score = confidence_map.get(response_source, 0.5)
-
-        return {
-            "response": final_response,
-            "confidence": confidence_score,
-            "agent_name": target_agent,
-            "request_id": task_id,
-            "status": "completed",
-            "price_satoshis": price
-        }
-
-    except Exception as e:
-        logger.error(f"❌ TASK ERROR: {str(e)}")
-        # Return a clean JSON error instead of crashing
-        return JSONResponse(status_code=500, content={"message": f"Task processing failed: {str(e)}"})
+# NOTE: a dead duplicate /tasks/submit definition used to live here. FastAPI/
+# Starlette match routes in registration order, so it was always shadowed by
+# the real, first-registered /tasks/submit above and never actually ran -
+# removed as part of wiring real RAG retrieval into the live definition
+# (security/correctness audit), rather than maintaining two copies that could
+# silently drift apart.
 
 async def call_openai_for_persona(description: str, complexity: int, persona_type: str = "duke-ml", task_id: str = None) -> Optional[str]:
     """Call OpenAI with safe persona lookup."""

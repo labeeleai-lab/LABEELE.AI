@@ -185,6 +185,29 @@ export interface TrainingUploadResult {
   total_submitted: number
 }
 
+export interface KnowledgeSource {
+  source_id: string
+  source_name: string
+  source_type: 'text' | 'markdown' | 'pdf'
+  persona_id: string | null
+  chunk_count: number
+  created_at: string
+  preview: string
+}
+
+export interface KnowledgeChunkDetail {
+  id: string
+  chunk_index: number
+  content: string
+  content_length: number
+}
+
+export interface KnowledgeUploadResult {
+  source_id: string
+  chunks_created: number
+  total_characters: number
+}
+
 export class DukeApiError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message)
@@ -324,4 +347,44 @@ export const dukeApi = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+
+  // Admin: knowledge system (Phase 1 - per-agent + DUKE-global RAG)
+  listKnowledge: (scope: 'global' | 'agent', personaId?: string) =>
+    adminRequest<KnowledgeSource[]>(
+      `/admin/knowledge?scope=${scope}${personaId ? `&persona_id=${encodeURIComponent(personaId)}` : ''}`,
+    ),
+  getKnowledgeSourceChunks: (sourceId: string) =>
+    adminRequest<KnowledgeChunkDetail[]>(`/admin/knowledge/sources/${sourceId}/chunks`),
+  uploadKnowledgeText: (params: { personaId: string | null; sourceName: string; text: string; markdown?: boolean }) =>
+    adminRequest<KnowledgeUploadResult>(
+      '/admin/knowledge/upload',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          persona_id: params.personaId,
+          source_name: params.sourceName,
+          content_type: params.markdown ? 'markdown' : 'text',
+          text: params.text,
+        }),
+      },
+      90_000,
+    ),
+  uploadKnowledgePdf: (params: { personaId: string | null; sourceName: string; fileBase64: string }) =>
+    adminRequest<KnowledgeUploadResult>(
+      '/admin/knowledge/upload',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          persona_id: params.personaId,
+          source_name: params.sourceName,
+          content_type: 'pdf',
+          file_base64: params.fileBase64,
+        }),
+      },
+      90_000,
+    ),
+  deleteKnowledgeSource: (sourceId: string) =>
+    adminRequest<{ status: string; deleted_chunks: number }>(`/admin/knowledge/sources/${sourceId}`, { method: 'DELETE' }),
+  deleteKnowledgeChunk: (chunkId: string) =>
+    adminRequest<{ status: string }>(`/admin/knowledge/chunks/${chunkId}`, { method: 'DELETE' }),
 }

@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/training', label: 'Training' },
   { href: '/admin/personas', label: 'Personas' },
+  { href: '/admin/knowledge', label: 'Knowledge' },
   { href: '/admin/annotate', label: 'Annotate' },
   { href: '/admin/code', label: 'Code' },
   { href: '/admin/team', label: 'Team' },

@@ -36,4 +36,10 @@ tenacity==9.1.4
 
 google-genai==1.62.0
 
+# Knowledge system (Phase 1) - chunking/embedding/retrieval, see backend/knowledge.py
+sentence-transformers
+psycopg2-binary
+pgvector
+pypdf
+
 

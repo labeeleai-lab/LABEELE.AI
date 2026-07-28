@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { GraduationCap, Users2, ClipboardList, Code2, ArrowRight } from 'lucide-react'
+import { GraduationCap, Users2, ClipboardList, Code2, ArrowRight, BookOpen } from 'lucide-react'
 import AdminShell from '../components/AdminShell'
 import GlassCard from '../components/GlassCard'
 import StatusCard from '../components/StatusCard'
@@ -36,6 +36,7 @@ function useFetch<T>(fn: () => Promise<T>) {
 const SECTIONS = [
   { href: '/admin/training', icon: GraduationCap, title: 'Training', description: 'Trigger retraining, clear the training cache, view stats.' },
   { href: '/admin/personas', icon: Users2, title: 'Personas', description: "Edit DUKE's personas at runtime, or create new ones." },
+  { href: '/admin/knowledge', icon: BookOpen, title: 'Knowledge', description: 'Train DUKE or any agent with documents - retrieved live in real responses.' },
   { href: '/admin/annotate', icon: ClipboardList, title: 'Annotate', description: 'Review recent queries and rate/correct responses.' },
   { href: '/admin/code', icon: Code2, title: 'Code', description: 'Browse, edit, and commit repo files via GitHub.' },
 ]
