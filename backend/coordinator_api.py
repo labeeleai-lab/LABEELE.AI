@@ -1698,7 +1698,12 @@ class RealDukeMLPipeline:
 
         # Initialize core components
         self.model = None
-        self.embedder = TextEmbedder()
+        # embedding_dim must match EnhancedModelConfig.embed_dim (768) - TextEmbedder's
+        # own default (512) silently mismatched this, so every real training run threw
+        # a matrix-shape RuntimeError the moment EnhancedDukeModel's input_proj layer
+        # (Linear(768, 768)) received a 512-dim tensor. This is why retrain-agents
+        # always failed once there was enough real data to actually reach training.
+        self.embedder = TextEmbedder(embedding_dim=self.config.embed_dim)
         self.generator = ResponseGenerator()
         self.brain = None  
         self.model_version = 0
