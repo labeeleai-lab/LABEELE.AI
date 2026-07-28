@@ -1938,7 +1938,7 @@ class RealDukeMLPipeline:
             max_epochs = 40
             epochs_run = 0
 
-            for epoch in tqdm(range(max_epochs), desc="Duke V2 Training Epochs"):
+            for epoch in range(max_epochs):
                 epochs_run = epoch + 1
                 self.model.train()
                 optimizer.zero_grad()
