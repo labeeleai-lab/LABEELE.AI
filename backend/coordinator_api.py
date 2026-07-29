@@ -916,6 +916,31 @@ Provide detailed visual analysis with specific observations about objects, color
                 "image", "visual", "object", "color", "composition",
                 "lighting", "perspective", "spatial", "texture"
             ]
+        },
+            "duke": {
+            "name": "DUKE",
+            "category": "coordinator",
+            "reputation_multiplier": 2.0,
+            "min_response_tokens": 250,
+            "max_response_tokens": 3000,
+            "temperature": 0.6,
+            "requires_validation": False,
+            "system_prompt": """You are DUKE, the central AI coordinator for the LABEELE.AI platform. You are not one specialist - you are the organization's global intelligence, with access to the combined knowledge of every specialist agent: the Emerging Technology Strategist, Backend Expert, DevOps Expert, ML Research Scientist, Security Expert, Cloud/Systems Expert, and Computer Vision Expert.
+
+CORE PRINCIPLES:
+- Determine which specialist knowledge is actually relevant to the question being asked
+- When a question spans multiple domains (e.g. "secure my Kubernetes deployment" spans both Security and DevOps), draw on and combine the relevant specialists' expertise rather than answering from only one angle
+- Produce ONE coherent, synthesized answer - never just list separate specialist opinions back to back
+- When you are genuinely combining expertise from more than one area, say so briefly (e.g. "From a security and infrastructure perspective, ...") so the synthesis is transparent, not hidden
+- If specialists' knowledge appears to conflict, note the tension explicitly and give your own reasoned recommendation rather than silently picking one side
+- Preserve technical precision - synthesizing across domains should not mean vague or watered-down answers
+
+RESPONSE STYLE:
+Write as the organization's central technical authority: confident, precise, and integrative. Reference the specific domains you're drawing on when it clarifies the answer. Prioritize a single clear recommendation over an exhaustive survey of options.""",
+            "validation_keywords": [
+                "coordinate", "synthesize", "combine", "integrate", "recommend",
+                "architecture", "strategy", "cross-functional"
+            ]
         }
 
         }
@@ -2613,7 +2638,7 @@ def write_log(message: str):
         f.write(log_line)
 
 
-@app.get("/api/logs/stream")
+@app.get("/api/logs/stream", dependencies=[Depends(require_admin_secret)])
 async def stream_logs(request: Request):
     """Server-Sent Events endpoint for real-time logs"""
     
@@ -3183,9 +3208,27 @@ async def submit_task(
                 prompt = persona["system_prompt"]
 
                 try:
-                    chunks = knowledge_lib.retrieve_relevant_chunks(db, KnowledgeChunk, target_agent, task_data.description)
+                    is_duke = target_agent == "duke"
+                    chunks = knowledge_lib.retrieve_relevant_chunks(
+                        db, KnowledgeChunk, target_agent, task_data.description,
+                        top_k=8 if is_duke else 4,
+                        cross_agent=is_duke,
+                    )
                     if chunks:
-                        context_block = "\n\n".join(f"[Reference {i+1}]\n{c.content}" for i, c in enumerate(chunks))
+                        if is_duke:
+                            # Cross-agent mode: attribute each chunk to the specialist it
+                            # came from so DUKE has real structure to synthesize from,
+                            # and the response can honestly reflect which specialists
+                            # were actually consulted (not a fabricated summary).
+                            def _label(pid):
+                                if pid is None:
+                                    return "DUKE Global"
+                                return SPECIALIST_PERSONAS.get(pid, {}).get("name", pid)
+                            context_block = "\n\n".join(
+                                f"[From {_label(c.persona_id)}]\n{c.content}" for c in chunks
+                            )
+                        else:
+                            context_block = "\n\n".join(f"[Reference {i+1}]\n{c.content}" for i, c in enumerate(chunks))
                         prompt += f"\n\nRelevant reference material:\n{context_block}"
                 except Exception as retrieval_error:
                     logger.warning(f"⚠️ Knowledge retrieval failed, continuing without it: {retrieval_error}")
@@ -3857,6 +3900,144 @@ async def delete_knowledge_chunk(chunk_id: str, db: Session = Depends(get_db)):
     db.delete(row)
     db.commit()
     return {"status": "success"}
+
+
+# ==================== ADMIN DASHBOARD (Phase 1) ====================
+# Real data only - see backend/knowledge.py and the security/training-pipeline
+# fixes earlier in this file's history for the reasoning. Anything without a
+# real backend source (GPU on this deployment, precision/recall/F1, per-agent
+# online/synchronizing states) is intentionally left out rather than faked -
+# the frontend surfaces those gaps explicitly instead of hiding or inventing them.
+
+class ModelVersionSummary(BaseModel):
+    version_number: int
+    created_at: datetime
+    training_samples: Optional[int]
+    validation_accuracy: Optional[float]
+    is_production: bool
+    model_info: Optional[dict]
+
+    model_config = {"from_attributes": True}
+
+
+@app.get(
+    "/admin/training/history",
+    response_model=List[ModelVersionSummary],
+    tags=["Dashboard"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def get_training_history(db: Session = Depends(get_db)):
+    """Every training run ever recorded, oldest first - powers the real accuracy/loss trend chart."""
+    return db.query(ModelVersionBase).order_by(ModelVersionBase.version_number).all()
+
+
+class SystemResourcesResponse(BaseModel):
+    cpu_percent: float
+    memory_used_gb: float
+    memory_total_gb: float
+    memory_percent: float
+    disk_used_gb: float
+    disk_total_gb: float
+    disk_percent: float
+    gpu_available: bool
+    gpu_utilization: Optional[float] = None
+    gpu_memory_used_gb: Optional[float] = None
+    gpu_memory_total_gb: Optional[float] = None
+    timestamp: datetime
+
+
+@app.get(
+    "/admin/system/resources",
+    response_model=SystemResourcesResponse,
+    tags=["Dashboard"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def get_system_resources_admin():
+    """
+    Real psutil CPU/memory/disk. GPU fields stay null with gpu_available=false
+    unless a real GPU is actually detected - never a hardcoded fallback number
+    (this replaces an earlier, unused endpoint that did exactly that).
+    """
+    import psutil
+
+    cpu_percent = psutil.cpu_percent(interval=0.1)
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+
+    gpu_available = False
+    gpu_utilization = None
+    gpu_memory_used_gb = None
+    gpu_memory_total_gb = None
+    if torch.cuda.is_available():
+        try:
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_available = True
+                gpu_utilization = gpu.load * 100
+                gpu_memory_used_gb = gpu.memoryUsed / 1024
+                gpu_memory_total_gb = gpu.memoryTotal / 1024
+        except Exception:
+            pass
+
+    return SystemResourcesResponse(
+        cpu_percent=cpu_percent,
+        memory_used_gb=mem.used / (1024 ** 3),
+        memory_total_gb=mem.total / (1024 ** 3),
+        memory_percent=mem.percent,
+        disk_used_gb=disk.used / (1024 ** 3),
+        disk_total_gb=disk.total / (1024 ** 3),
+        disk_percent=disk.percent,
+        gpu_available=gpu_available,
+        gpu_utilization=gpu_utilization,
+        gpu_memory_used_gb=gpu_memory_used_gb,
+        gpu_memory_total_gb=gpu_memory_total_gb,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+
+class DashboardSummaryResponse(BaseModel):
+    total_tasks_completed: int
+    total_training_samples: int
+    total_knowledge_chunks: int
+    knowledge_chunks_by_agent: dict
+    latest_model_version: int
+    latest_validation_accuracy: Optional[float]
+    total_agents: int
+
+
+@app.get(
+    "/admin/dashboard/summary",
+    response_model=DashboardSummaryResponse,
+    tags=["Dashboard"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def get_dashboard_summary(db: Session = Depends(get_db)):
+    """One aggregate call for the dashboard's at-a-glance row - every field computed
+    directly from real tables, replacing reliance on the permanently-fallback
+    get_training_stats() (its dependency, openai_training_logger, doesn't exist)."""
+    agents = db.query(Agent).all()
+    total_tasks = sum(a.total_tasks_completed or 0 for a in agents)
+    total_training_samples = db.query(TrainingData).count()
+
+    knowledge_persona_ids = db.query(KnowledgeChunk.persona_id).all()
+    knowledge_by_agent: dict = {}
+    for (pid,) in knowledge_persona_ids:
+        key = pid or "duke-global"
+        knowledge_by_agent[key] = knowledge_by_agent.get(key, 0) + 1
+
+    latest_model = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.created_at)).first()
+
+    return DashboardSummaryResponse(
+        total_tasks_completed=total_tasks,
+        total_training_samples=total_training_samples,
+        total_knowledge_chunks=len(knowledge_persona_ids),
+        knowledge_chunks_by_agent=knowledge_by_agent,
+        latest_model_version=latest_model.version_number if latest_model else 0,
+        latest_validation_accuracy=latest_model.validation_accuracy if latest_model else None,
+        total_agents=len(agents),
+    )
 
 
 # ----------------- DASHBOARD -----------------
@@ -5231,18 +5412,6 @@ async def get_agents(db: Session = Depends(get_db)):
     agents = db.query(Agent).all()
     return agents
 
-@app.get("/model/status")
-async def get_model_status(db: Session = Depends(get_db)):
-    model_version = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.created_at)).first()
-    if not model_version:
-        return {"status": "not_initialized", "version": 0}
-    return {
-        "status": "ready" if model_version.is_production else "training",
-        "version": model_version.version_number,
-        "accuracy": model_version.validation_accuracy,
-        "training_samples": model_version.training_samples
-    }
-
 @app.get("/tasks", dependencies=[Depends(require_admin_secret)])
 async def get_tasks_with_search(query: Optional[str] = None, limit: int = 100, db: Session = Depends(get_db)):
     try:
@@ -5308,58 +5477,11 @@ async def test_iac_validation(request: dict):
     result = await adversarial_validator.validate_and_refine(prompt, persona, complexity)
     return result
 
-@app.get("/learning/status")
-async def get_learning_status(db: Session = Depends(get_db)):
-    """
-    Unified learning status endpoint for dashboard.
-    Combines training stats, model info, and agent data.
-    """
-    try:
-        # Get training stats
-        # Note: If using the mocked openai_training_logger, this returns a safe dict
-        training_stats = get_training_stats()
-        
-        # Get latest model version from database
-        latest_model = db.query(ModelVersionBase).order_by(
-            desc(ModelVersionBase.created_at)
-        ).first()
-        
-        # Get all agent personas
-        agents = db.query(Agent).all()
-        agent_names = [a.name for a in agents]
-        
-        # Get memory size from Duke pipeline
-        memory_size = 0
-        if duke_pipeline.generator and hasattr(duke_pipeline.generator, 'response_database'):
-            memory_size = len(duke_pipeline.generator.response_database)
-        
-        return {
-            "status": "trained" if (latest_model and latest_model.is_production) else "training",
-            "last_training_time": latest_model.created_at.isoformat() if latest_model else datetime.now(timezone.utc).isoformat(),
-            "total_samples_trained": training_stats.get("training_samples_available", 0),
-            "memory_size": memory_size,
-            "agent_personas": agent_names,
-            "model_version": f"v{latest_model.version_number}" if latest_model else "v0.0.0",
-            "validation_accuracy": latest_model.validation_accuracy if latest_model else 0.0,
-            "estimated_cost_usd": training_stats.get("estimated_cost_usd", 0.0),
-            "total_inferences": duke_pipeline.stats.get("total_inferences", 0) if duke_pipeline else 0,
-            "recent_loss": duke_pipeline.stats.get("recent_loss", 0.0) if duke_pipeline else 0.0,
-        }
-    except Exception as e:
-        logger.error(f"❌ Learning status error: {e}")
-        # Safe fallback so dashboard doesn't crash
-        return {
-            "status": "error",
-            "last_training_time": datetime.now(timezone.utc).isoformat(),
-            "total_samples_trained": 0,
-            "memory_size": 0,
-            "agent_personas": [],
-            "model_version": "v0.0.0",
-            "validation_accuracy": 0.0,
-            "estimated_cost_usd": 0.0,
-            "total_inferences": 0,
-            "recent_loss": 0.0,
-        }
+# NOTE: dead duplicate /model/status and /learning/status definitions used to
+# live here. FastAPI/Starlette match routes in registration order, so both
+# were always shadowed by the real, first-registered definitions earlier in
+# this file and never actually ran - removed while wiring in the DUKE
+# cross-agent feature, same cleanup already applied to /tasks/submit earlier.
 
 # ==================== HELPER FUNCTIONS FOR NEW ENDPOINTS ====================
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Send, Loader2, Check, AlertCircle, Shield, Brain, Server, Code2, Rocket, Eye } from 'lucide-react'
+import { Send, Loader2, Check, AlertCircle, Shield, Brain, Server, Code2, Rocket, Eye, Network, TrendingUp } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import GlassCard from '../components/GlassCard'
 import StatusCard from '../components/StatusCard'
@@ -9,13 +9,18 @@ import { dukeApi, DukeApiError, DUKE_API_URL, type HealthStatus, type ModelStatu
 import { supabaseBrowser } from '@/lib/supabase/client'
 import { listRecentQueries, saveQuery, type AgentQuery } from '@/lib/query-history'
 
+// DUKE first and visually distinct - it's the central coordinator, not an eighth
+// specialist. Drawing on every specialist's knowledge at once (see backend
+// /tasks/submit's cross_agent retrieval mode), not just its own slice of it.
 const AGENTS = [
+  { id: 'duke', name: 'DUKE', icon: Network, isCoordinator: true },
   { id: 'security-expert', name: 'Security Expert', icon: Shield },
   { id: 'ml-expert', name: 'ML Expert', icon: Brain },
   { id: 'systems-expert', name: 'Systems Expert', icon: Server },
   { id: 'backend-expert', name: 'Backend Expert', icon: Code2 },
   { id: 'devops-expert', name: 'DevOps Expert', icon: Rocket },
   { id: 'vision-expert', name: 'Vision Expert', icon: Eye },
+  { id: 'advanced-expert', name: 'Emerging Tech Strategist', icon: TrendingUp },
 ]
 
 function useBackendStatus() {
@@ -133,10 +138,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <GlassCard>
-            <h2 className="text-lg font-semibold text-white mb-5">Ask a specialist</h2>
+            <h2 className="text-lg font-semibold text-white mb-5">Ask DUKE or a specialist</h2>
 
             <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-300 mb-3">Specialist</label>
+              <label className="block text-sm font-medium text-gray-300 mb-3">
+                Who should answer? <span className="text-gray-500 font-normal">(DUKE draws on every specialist&apos;s knowledge at once)</span>
+              </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                 {AGENTS.map((agent) => {
                   const Icon = agent.icon
@@ -149,7 +156,9 @@ export default function DashboardPage() {
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                         active
                           ? 'bg-gold-500 text-royal-blue-900'
-                          : 'bg-white/5 border border-gold-500/20 text-gray-300 hover:border-gold-500/50'
+                          : agent.isCoordinator
+                            ? 'bg-gold-500/10 border border-gold-500/50 text-gold-400 hover:border-gold-500'
+                            : 'bg-white/5 border border-gold-500/20 text-gray-300 hover:border-gold-500/50'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" />

@@ -208,6 +208,40 @@ export interface KnowledgeUploadResult {
   total_characters: number
 }
 
+export interface ModelVersionSummary {
+  version_number: number
+  created_at: string
+  training_samples: number | null
+  validation_accuracy: number | null
+  is_production: boolean
+  model_info: Record<string, unknown> | null
+}
+
+export interface SystemResources {
+  cpu_percent: number
+  memory_used_gb: number
+  memory_total_gb: number
+  memory_percent: number
+  disk_used_gb: number
+  disk_total_gb: number
+  disk_percent: number
+  gpu_available: boolean
+  gpu_utilization: number | null
+  gpu_memory_used_gb: number | null
+  gpu_memory_total_gb: number | null
+  timestamp: string
+}
+
+export interface DashboardSummary {
+  total_tasks_completed: number
+  total_training_samples: number
+  total_knowledge_chunks: number
+  knowledge_chunks_by_agent: Record<string, number>
+  latest_model_version: number
+  latest_validation_accuracy: number | null
+  total_agents: number
+}
+
 export class DukeApiError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message)
@@ -387,4 +421,10 @@ export const dukeApi = {
     adminRequest<{ status: string; deleted_chunks: number }>(`/admin/knowledge/sources/${sourceId}`, { method: 'DELETE' }),
   deleteKnowledgeChunk: (chunkId: string) =>
     adminRequest<{ status: string }>(`/admin/knowledge/chunks/${chunkId}`, { method: 'DELETE' }),
+
+  // Admin: dashboard (Phase 1 - real data only, see backend/coordinator_api.py's
+  // "ADMIN DASHBOARD" section for exactly what's real vs. intentionally omitted)
+  trainingHistory: () => adminRequest<ModelVersionSummary[]>('/admin/training/history'),
+  systemResources: () => adminRequest<SystemResources>('/admin/system/resources'),
+  dashboardSummary: () => adminRequest<DashboardSummary>('/admin/dashboard/summary'),
 }

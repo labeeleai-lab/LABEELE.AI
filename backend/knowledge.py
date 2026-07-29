@@ -143,13 +143,21 @@ def retrieve_relevant_chunks(
     query_text: str,
     top_k: int = DEFAULT_TOP_K,
     min_similarity: float = DEFAULT_SIM_THRESHOLD,
+    cross_agent: bool = False,
 ):
     """
-    Embeds query_text and returns up to top_k KnowledgeChunk rows scoped to
-    this persona plus DUKE-global knowledge (persona_id IS NULL), ranked by
+    Embeds query_text and returns up to top_k KnowledgeChunk rows, ranked by
     cosine similarity, filtered to min_similarity. model_cls is passed in
     (the KnowledgeChunk class) rather than imported, so this module never
     needs to import coordinator_api.py.
+
+    Normal mode: scoped to this persona plus DUKE-global knowledge
+    (persona_id IS NULL). cross_agent=True (used for DUKE itself) drops the
+    persona filter entirely and searches every agent's knowledge - semantic
+    similarity alone decides which specialists' chunks are relevant to a
+    given question, with no hand-written routing rules. Each returned row
+    still carries its own persona_id so the caller can attribute which
+    specialist each chunk came from.
     """
     embedder = get_embedder()
     if embedder is None:
@@ -158,13 +166,10 @@ def retrieve_relevant_chunks(
     query_vec = embed_query(query_text)
 
     # pgvector's cosine_distance = 1 - cosine_similarity, so smaller is more similar.
-    rows = (
-        db.query(model_cls)
-        .filter((model_cls.persona_id == persona_id) | (model_cls.persona_id.is_(None)))
-        .order_by(model_cls.embedding.cosine_distance(query_vec))
-        .limit(top_k)
-        .all()
-    )
+    query = db.query(model_cls)
+    if not cross_agent:
+        query = query.filter((model_cls.persona_id == persona_id) | (model_cls.persona_id.is_(None)))
+    rows = query.order_by(model_cls.embedding.cosine_distance(query_vec)).limit(top_k).all()
 
     # The DB query above only orders/limits by distance; do the actual threshold
     # check in Python against real cosine similarity - cheap since it's just top_k rows.
