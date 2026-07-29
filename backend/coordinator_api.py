@@ -3153,7 +3153,10 @@ async def submit_task(
 
         # A. Check Cache first
         try:
-            query = text("SELECT output_data FROM training_data WHERE input_data = :prompt LIMIT 1")
+            # CAST(...AS TEXT), not a bare "=", because input_data is a json column -
+            # Postgres rejects json = text directly ("operator does not exist: json =
+            # unknown"), unlike SQLite which allowed it silently. CAST works on both.
+            query = text("SELECT output_data FROM training_data WHERE CAST(input_data AS TEXT) = :prompt LIMIT 1")
             exact_prompt = json.dumps({"description": task_data.description, "complexity": task_data.complexity})
             result = db.execute(query, {"prompt": exact_prompt}).fetchone()
             if result:
@@ -3162,7 +3165,11 @@ async def submit_task(
                 final_response = data.get("result")
                 response_source = "cache"
                 logger.info("✅ Found EXACT cached response")
-        except Exception: pass
+        except Exception as cache_error:
+            # A failed query leaves a Postgres transaction "aborted" until rolled back -
+            # every later query on this same session would fail too without this.
+            logger.warning(f"⚠️ Cache lookup failed, continuing without it: {cache_error}")
+            db.rollback()
 
         # B. Local Duke Brain
         if not final_response:
