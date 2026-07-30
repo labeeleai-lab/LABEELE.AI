@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Shield, Brain, Server, Code2, Rocket, Eye, Globe, MessageSquare, Network, AudioLines, ArrowRight } from 'lucide-react'
+import { Shield, Brain, Server, Code2, Rocket, Eye, Globe, MessageSquare, Network, AudioLines, ArrowRight, Sparkles } from 'lucide-react'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 import GlassCard from '../components/GlassCard'
@@ -40,6 +40,12 @@ const LIVE_PERSONAS = [
     name: 'Vision Specialist',
     category: 'Computer Vision',
     description: 'Detailed visual analysis - object recognition, composition, spatial relationships, and lighting.',
+  },
+  {
+    icon: Sparkles,
+    name: 'Emerging Tech Strategist',
+    category: 'Innovation',
+    description: 'Technology maturity assessment, adoption roadmaps, and ROI analysis for evaluating cutting-edge technology.',
   },
 ]
 

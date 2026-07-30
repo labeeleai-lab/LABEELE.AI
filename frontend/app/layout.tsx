@@ -6,7 +6,7 @@ export const metadata: Metadata = {
     default: 'LABEELE.AI - Specialist AI Agents',
     template: '%s | LABEELE.AI',
   },
-  description: 'Six focused AI specialists - security, ML, systems, backend, DevOps, and vision - behind one query interface.',
+  description: 'Seven focused AI specialists - security, ML, systems, backend, DevOps, vision, and emerging tech - behind one query interface.',
   keywords: ['AI', 'Machine Learning', 'Specialist Agents', 'Security', 'DevOps', 'Computer Vision'],
   authors: [{ name: 'LABEELE.AI' }],
   metadataBase: new URL('https://www.labeele.ai'),
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'LABEELE.AI - Specialist AI Agents',
-    description: 'Six focused AI specialists behind one query interface.',
+    description: 'Seven focused AI specialists behind one query interface.',
     type: 'website',
     locale: 'en_US',
     siteName: 'LABEELE.AI',
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'LABEELE.AI - Specialist AI Agents',
-    description: 'Six focused AI specialists behind one query interface.',
+    description: 'Seven focused AI specialists behind one query interface.',
   },
 }
 

@@ -38,8 +38,8 @@ export default function SiteFooter() {
           <div>
             <Image src="/images/Logo.png" alt="LABEELE.AI" width={120} height={30} className="h-6 w-auto object-contain mb-4" />
             <p className="text-gray-400 text-sm leading-relaxed max-w-xs">
-              A specialist AI agent platform for security, ML, infrastructure, backend, DevOps, and
-              vision tasks.
+              A specialist AI agent platform for security, ML, infrastructure, backend, DevOps,
+              vision, and emerging tech tasks.
             </p>
           </div>
 

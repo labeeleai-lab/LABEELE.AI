@@ -34,9 +34,9 @@ export default function DocsPage() {
             <GlassCard className="mb-10">
               <h2 className="text-xl font-semibold text-white mb-4">2. Choose a persona, or let DUKE pick</h2>
               <p className="text-gray-400 text-sm leading-relaxed">
-                From the dashboard, pick one of DUKE&apos;s six live personas &mdash; security, ML,
-                systems, backend, DevOps, or vision &mdash; or describe your task and let DUKE route
-                it to the persona best suited to it automatically.
+                From the dashboard, pick one of DUKE&apos;s seven live personas &mdash; security, ML,
+                systems, backend, DevOps, vision, or emerging tech &mdash; or describe your task and
+                let DUKE route it to the persona best suited to it automatically.
               </p>
             </GlassCard>
 

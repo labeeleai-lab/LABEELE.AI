@@ -14,6 +14,7 @@ import {
   Check,
   Clock,
   DollarSign,
+  Sparkles,
 } from 'lucide-react'
 import SiteHeader from './components/SiteHeader'
 import SiteFooter from './components/SiteFooter'
@@ -26,6 +27,7 @@ const LIVE_PERSONAS = [
   { icon: Code2, name: 'Backend Developer', description: 'API design, data layer decisions, resilience patterns.' },
   { icon: Rocket, name: 'DevOps', description: 'CI/CD pipelines, infrastructure as code, release strategy.' },
   { icon: Eye, name: 'Vision Specialist', description: 'Object recognition, composition, spatial reasoning.' },
+  { icon: Sparkles, name: 'Emerging Tech Strategist', description: 'Technology evaluation, adoption strategy, ROI on new tech.' },
 ]
 
 const ROADMAP_PERSONAS = [
@@ -36,7 +38,7 @@ const ROADMAP_PERSONAS = [
 ]
 
 const METRICS = [
-  { value: '6', label: 'Personas live today' },
+  { value: '7', label: 'Personas live today' },
   { value: '24/7', label: 'Availability' },
   { value: '1', label: 'Brain, one interface' },
   { value: '0', label: 'Setup required' },
@@ -113,7 +115,7 @@ export default function HomePage() {
             <div>
               <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">Meet DUKE</h2>
               <p className="text-lg text-gray-300 leading-relaxed mb-5">
-                DUKE isn&apos;t six separate AI products bundled together. It&apos;s one brain with a
+                DUKE isn&apos;t seven separate AI products bundled together. It&apos;s one brain with a
                 growing library of specialist personas &mdash; skills DUKE draws on the way a person
                 draws on specific expertise for a specific job. When your request comes in, DUKE
                 identifies what kind of problem it is and injects the persona best suited to solve
@@ -164,7 +166,7 @@ export default function HomePage() {
                     )
                   })}
                 </div>
-                <p className="text-xs text-gray-500 mt-4">DUKE&apos;s six live specialist personas</p>
+                <p className="text-xs text-gray-500 mt-4">DUKE&apos;s seven live specialist personas</p>
               </div>
             </GlassCard>
           </div>

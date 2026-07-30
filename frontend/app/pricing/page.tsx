@@ -22,7 +22,7 @@ const TIERS = [
     price: '299',
     description: 'For growing teams that need every specialist',
     features: [
-      'All 6 specialist agents',
+      'All 7 specialist agents',
       '100,000 queries / month',
       'Advanced usage dashboard',
       'Priority support',
