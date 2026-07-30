@@ -2767,7 +2767,13 @@ async def submit_task(
                     is_duke = target_agent == "duke"
                     chunks = knowledge_lib.retrieve_relevant_chunks(
                         db, KnowledgeChunk, target_agent, task_data.description,
-                        top_k=8 if is_duke else 4,
+                        # Fewer chunks for DUKE, not more - this small local model has a
+                        # strong tendency to paraphrase/echo whatever context it's given
+                        # (likely a side effect of the retrieval-alignment training
+                        # objective in RealDukeMLPipeline, which rewards output that's
+                        # textually close to retrieved chunks) instead of reasoning about
+                        # the actual question. Less material means less to latch onto.
+                        top_k=4 if is_duke else 4,
                         cross_agent=is_duke,
                     )
                     if chunks:
@@ -2790,13 +2796,14 @@ async def submit_task(
                         else:
                             context_block = "\n\n".join(c.content for c in chunks)
                         prompt += (
-                            "\n\nBackground context for you to draw from in your own words - "
-                            f"do not quote, list, or repeat these labels or headings:\n{context_block}"
+                            "\n\nBackground context - use only what is actually relevant to "
+                            "the question below, in your own reasoning. Do not quote, list, "
+                            f"summarize, or repeat this material or its labels:\n{context_block}"
                         )
                 except Exception as retrieval_error:
                     logger.warning(f"⚠️ Knowledge retrieval failed, continuing without it: {retrieval_error}")
 
-                prompt += f"\n\nTask: {task_data.description}"
+                prompt += f"\n\nAnswer this question directly, in your own words: {task_data.description}"
                 if len(prompt) > 6000:
                     prompt = prompt[:6000]
 
