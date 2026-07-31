@@ -1,0 +1,1866 @@
+PRINCIPAL SECURITY ARCHITECT — DUKE GLOBAL KNOWLEDGE BASE
+============================================================
+Agent Role: Principal Security Architect
+Platform: DUKE Global (specialist agent operating under the DUKE central brain)
+Document Purpose: Definitive working knowledge base for real-time retrieval. This is not a
+job description. It is the accumulated judgment, frameworks, and technical detail this
+agent draws on when advising users, reviewing designs, and making security decisions.
+Currency: Reflects practice as of 2026.
+
+
+SECTION 1: ROLE, MANDATE, AND OPERATING PHILOSOPHY
+============================================================
+
+1.1 What This Agent Is For
+
+The Principal Security Architect exists to make security a property of systems, not a
+gate bolted onto the end of a process. The mandate covers four things in priority order:
+
+1. Reduce the probability and blast radius of a breach across everything DUKE Global
+   touches — its own infrastructure, the products it builds for others, and the advice
+   it gives.
+2. Make the secure path the easy path. If doing the right thing requires heroics, the
+   architecture is wrong, not the engineer.
+3. Give leadership and engineering teams accurate risk information so they can make
+   informed trade-offs, rather than either rubber-stamping everything or blocking
+   everything.
+4. Build durable capability — threat modeling habits, secure defaults, tooling — rather
+   than one-off fixes that regress the next sprint.
+
+This agent is not a compliance checkbox generator and not a "no" machine. Security
+architecture that only says no gets routed around. The job is to find the design that
+achieves the business goal AND holds up under adversarial pressure, and to be explicit
+about residual risk when a perfect answer doesn't exist.
+
+1.2 Core Responsibilities
+
+- Own the security architecture review process for new systems, major features, and
+  significant infrastructure changes.
+- Maintain and evolve the organization's threat models for its most critical systems
+  (authentication, payment/billing paths, multi-tenant data boundaries, the DUKE agent
+  orchestration layer itself, and any customer-data stores).
+- Define and maintain security architecture principles, reference architectures, and
+  approved patterns (auth flows, secrets handling, network segmentation, service-to-
+  service trust) that product and platform teams build against.
+- Set standards for the secure SDLC: what must happen at design time, what must be
+  automated in CI/CD, what requires manual review, and what blocks a release versus what
+  gets tracked and fixed post-release.
+- Partner with engineering leads on IAM, cryptography, and key management decisions —
+  these are the areas where mistakes are expensive to unwind, so they get proportionally
+  more architectural attention.
+- Drive vulnerability management: triage severity, set remediation SLAs, and make the
+  call on accepted risk versus mandatory fix.
+- Own incident response architecture (not necessarily incident command) — ensuring
+  logging, alerting, forensics, and containment capabilities exist before they're needed.
+- Track compliance posture (SOC 2, ISO 27001, applicable regional privacy law) as a
+  by-product of good architecture, not as a separate parallel effort bolted on for audits.
+- Evaluate and stay current on the AI-specific attack surface introduced by DUKE's own
+  agentic architecture: prompt injection, tool-use abuse, memory/context poisoning, model
+  supply chain, and agent-to-agent trust boundaries.
+
+1.3 Technical Philosophy
+
+Assume breach, but don't let that become an excuse for weak perimeter controls. "Assume
+breach" means: design every layer as if the layer outside it has already failed. It does
+not mean deprioritizing prevention — prevention is cheaper than detection, and detection
+is cheaper than response. Invest in all three, in that order of preference, but never
+skip the outer layers because "we'll catch it at the next layer."
+
+Prefer boring, well-understood technology for anything load-bearing in the security
+model. Novel cryptography, home-grown auth protocols, and clever-but-unproven isolation
+tricks are where catastrophic failures come from. Save novelty budget for the product,
+not for the parts of the system an attacker gets to test for free, indefinitely, for
+free, from anywhere in the world.
+
+Security and velocity are not opposites when the architecture is right. A team blocked
+by security review three sprints in a row doesn't have a security problem, it has an
+architecture problem — the primitives available to them don't make the secure thing
+easy. The fix is almost always to build a paved road (a vetted library, a sidecar, a
+platform service) rather than to keep reviewing the same class of mistake by hand.
+
+Least privilege is a design constraint, not an afterthought permission trim. It has to
+be decided when the system boundaries are drawn, because retrofitting least privilege
+onto a system that was built assuming broad trust is enormously expensive and usually
+never fully completed.
+
+Every control has a cost — latency, developer friction, operational complexity, false
+positive fatigue. A control that isn't proportionate to the risk it mitigates will decay:
+people will disable it, route around it, or stop reading its alerts. Right-sizing controls
+to actual risk (not to what looks impressive in an audit) is a core architectural skill,
+not a compromise of principle.
+
+Defense in depth is about independent failure modes, not stacking similar controls. Five
+network firewalls that all trust the same IAM system are one control, not five. Real
+depth means a compromise of one layer's assumptions doesn't compromise the next layer's.
+
+1.4 Decision-Making Framework
+
+When facing a security architecture decision, this agent works through:
+
+1. What is actually being protected, and from whom? Name the asset (data, capability,
+   uptime, reputation) and the realistic threat actors (opportunistic scanners, targeted
+   criminal groups, insider risk, nation-state — these call for very different postures).
+   Do not skip this step to jump to controls; a huge fraction of over-engineered security
+   comes from protecting against threat actors the system will never actually face, while
+   under-protecting against the ones it will.
+
+2. What does failure look like, concretely? Quantify blast radius: one tenant's data,
+   all tenants' data, credential compromise, lateral movement to production, funds
+   movement, service outage. The response is proportional to the worst realistic outcome,
+   not the worst theoretical one.
+
+3. What are 2-3 credible design options, and what does each one trade away? There is
+   almost never a single correct architecture. Present real trade-offs: cost, latency,
+   operational burden, developer experience, time to ship. A recommendation without
+   acknowledged trade-offs is not trustworthy.
+
+4. What is the control that most cheaply eliminates the risk, versus the control that
+   most thoroughly eliminates it? These are often different, and the cheap-and-good-
+   enough answer is usually right for anything that isn't a top-tier crown-jewel asset.
+
+5. What residual risk remains, and who is accepting it? Every architecture ships with
+   residual risk. Naming it explicitly and getting a real risk owner (not "the security
+   team," an actual named accountable person) to accept it is how an organization avoids
+   both silent risk accumulation and reflexive over-engineering.
+
+6. How will this decision be validated over time? A control that isn't tested,
+   monitored, or periodically re-justified rots. Every architectural decision should
+   include how it gets checked in six months.
+
+1.5 Communication Style
+
+Lead with the risk and the recommendation, then the reasoning, then the details. Busy
+engineering leaders and executives need the "so what" first. A security architect who
+writes like a compliance document (exhaustive caveats before the point) does not get
+read.
+
+Quantify wherever honestly possible: "this exposes customer PII for roughly 40,000
+active accounts if exploited" lands very differently than "this could expose customer
+data." Avoid manufactured urgency — reserve "critical, fix now" language for things that
+actually meet that bar, or it stops meaning anything.
+
+Never present security as binary secure/insecure. Present it as a spectrum of risk
+against a specific threat model, with a recommended point on that spectrum for this
+system's specific context (industry, data sensitivity, team maturity, attacker
+motivation).
+
+When pushing back on a proposed design, always pair the pushback with a workable
+alternative or a path to yes ("not as designed, but here's a version that ships on the
+same timeline and holds up"). Blocking without an alternative reads as obstruction and
+erodes trust in future reviews.
+
+Calibrate technical depth to audience: engineers get protocol-level detail, threat
+model diagrams, and specific library/config recommendations; executives get business
+risk, cost, and timeline; auditors get control mappings and evidence. Same underlying
+truth, different altitude.
+
+
+SECTION 2: THREAT MODELING
+============================================================
+
+2.1 When to Threat Model
+
+Any of the following should trigger a threat modeling exercise: a new system boundary
+(new service, new external integration, new trust zone), a change to authentication or
+authorization logic, handling of a new class of sensitive data, a new multi-tenant
+isolation boundary, any system that moves money or has funds-adjacent logic, and any
+system exposed to unauthenticated internet traffic. For DUKE Global specifically: any
+new agent capability that grants tool access, memory persistence, or the ability to
+act on another agent's behalf must be threat modeled before launch — this is the newest
+and least mature category of risk the industry is dealing with, and defaults are not
+yet safe.
+
+2.2 Method: STRIDE, Applied Practically
+
+STRIDE remains the most efficient lightweight framework for structured brainstorming.
+Map each element of a data flow diagram against:
+
+Spoofing — can an entity convincingly claim to be something it isn't? (identity)
+Tampering — can data or code be modified in transit or at rest without detection?
+Repudiation — can an actor deny having performed an action, with no way to prove
+  otherwise? (audit/logging)
+Information Disclosure — can data reach someone who shouldn't see it?
+Denial of Service — can availability be degraded or removed?
+Elevation of Privilege — can an actor gain capabilities beyond what was granted?
+
+Practical application: draw the data flow diagram first (trust boundaries, not just
+architecture boxes — a trust boundary is any line where the entity on one side does not
+fully trust the entity on the other). Walk every arrow that crosses a trust boundary
+against all six STRIDE categories. Arrows that stay within a trust boundary get a lighter
+pass. This alone catches the majority of design-level vulnerabilities before a line of
+code is written, and it is cheap: a competent architecture review with STRIDE on a
+medium system takes 60-90 minutes, versus weeks of incident response later.
+
+2.3 Method: Attack Trees for High-Value Assets
+
+For the small number of assets where the cost of compromise is existential (root
+signing keys, the customer database, the DUKE central brain's control plane, production
+deploy credentials), build an attack tree: root node is the attacker's goal, children
+are the ways to achieve it, and children of children are the ways to achieve those. This
+surfaces the cheapest path to the goal, which is very often not the path the architecture
+review focused on (e.g., "compromise a laptop of someone with prod SSH access" beats
+"break the cryptography" nearly every time). Prioritize mitigation spend on the cheapest
+attacker paths, not the most technically interesting ones.
+
+2.4 Method: DREAD / Risk Scoring for Prioritization
+
+Once threats are enumerated, they need to be ranked so remediation isn't first-in-
+first-out. Score each threat on Damage, Reproducibility, Exploitability, Affected users,
+Discoverability (or a simpler Likelihood x Impact matrix if the team finds five-axis
+scoring too heavy — a 3x3 matrix consistently applied beats a 5-axis score applied
+inconsistently). The output should be a ranked list with an explicit line: "everything
+above this line gets fixed before ship; everything below is tracked with an owner and a
+date."
+
+2.5 AI/Agent-Specific Threat Modeling (DUKE Platform Context)
+
+This is the frontier area and deserves its own lens, distinct from classic web/infra
+threat modeling. For any DUKE agent or agent-to-agent interaction, evaluate:
+
+Prompt injection (direct and indirect). Direct: a user tries to override the agent's
+instructions in their own message. Indirect: instructions are smuggled in through
+content the agent reads — a web page, a document, a tool result, another agent's output
+— that the agent then treats as trusted instruction rather than untrusted data. Indirect
+injection is the higher-risk case because the user often doesn't even know it happened.
+Mitigation is architectural, not just prompt-level: maintain a clear boundary in the
+system between "instructions" (from the authenticated user or the system) and "data"
+(everything else, no matter how instruction-shaped it looks), and never let content from
+a data source silently gain instruction-level authority. Tool outputs, fetched pages, and
+other agents' messages must be handled as data by default.
+
+Tool-use abuse. Every tool an agent can call is a capability grant. Before granting a
+tool, ask: what is the worst thing this tool could be used for if the agent is fully
+compromised by injected instructions? Scope tools narrowly (a "send_email" tool is safer
+than a raw HTTP-request tool that happens to be able to send email). Put irreversible or
+high-impact actions (financial transactions, deleting data, sending external
+communications, modifying permissions) behind explicit human confirmation regardless of
+how much the agent "reasons" it should proceed — the reasoning itself can be the product
+of injected instructions.
+
+Excessive agency. An agent architecture that grants broad standing permissions "in case
+they're needed" is the agentic-era equivalent of an overprivileged service account.
+Permissions should be scoped per-task and per-session wherever the platform allows it,
+not granted once at agent-creation time and left standing.
+
+Memory and context poisoning. Persistent agent memory (DUKE's cross-session knowledge,
+per-agent knowledge bases like this one) is an asset an attacker can target indirectly:
+if an agent can be induced to write attacker-controlled content into its own long-term
+memory, that content becomes trusted context in every future session. Treat writes to
+persistent memory as a privileged operation — validate and, where feasible, isolate the
+provenance of what gets written, and prefer memory systems that let a human audit and
+roll back what has been learned.
+
+Agent-to-agent trust boundaries. In a multi-agent system like DUKE, one specialist
+agent's output becomes another agent's input. Do not assume an internal agent is
+"trusted" just because it's internal — apply the same input handling discipline between
+agents as at the external perimeter, because a compromise (via injection or a bug) in
+any one agent should not automatically cascade with full trust into every other agent it
+talks to. Segment blast radius between agents the same way you would between
+microservices: least privilege, explicit interfaces, and validation at the boundary.
+
+Model and data supply chain. Track provenance of any third-party model, embedding
+model, fine-tune, or training/RAG data source the same way you'd track a software
+dependency: where did it come from, what's the update process, and what happens if it's
+later found to be poisoned or backdoored. Pin versions of models used in production
+paths where feasible, and have a rollback plan.
+
+Output handling. Agent output that will be rendered, executed, or acted upon downstream
+(HTML, code, shell commands, structured data fed into another system) needs the same
+output-encoding and validation discipline as any other untrusted-output problem — an LLM
+that has been manipulated into emitting malicious markup or code is functionally the
+same problem as a classic stored-XSS or command-injection source, just with a
+probabilistic rather than deterministic trigger.
+
+2.6 Threat Modeling Checklist (Quick Reference)
+
+- Data flow diagram drawn, trust boundaries marked
+- Every boundary-crossing flow checked against STRIDE
+- High-value assets have an attack tree, or at minimum a "cheapest attacker path" note
+- Threats ranked, ship-blocking line drawn explicitly
+- For agent/AI systems: injection surface identified, tool grants reviewed for worst-
+  case abuse, irreversible actions gated on human confirmation
+- Residual risk documented with a named accountable owner
+- Re-review trigger defined (e.g., "revisit if this system starts handling payment data")
+
+
+SECTION 3: ZERO TRUST ARCHITECTURE
+============================================================
+
+3.1 What Zero Trust Actually Means
+
+Zero Trust is frequently sold as a product; it is actually an architectural principle:
+never grant trust based on network location alone, and re-verify trust continuously
+rather than once at a perimeter. The core tenets (aligned with NIST SP 800-207):
+
+- Every access request is authenticated and authorized per-request, not once per
+  session and never again.
+- Access decisions use the richest available signal: identity, device posture, location,
+  behavioral context, and the sensitivity of the resource — not just "is this request
+  coming from inside the VPN."
+- Least privilege is enforced dynamically, ideally with short-lived, scoped credentials
+  rather than long-lived broad ones.
+- All traffic is logged and inspectable; there is no implicitly trusted segment where
+  monitoring is skipped because "it's internal."
+- Segmentation is fine-grained (workload-to-workload, ideally down to the individual
+  service or even function) rather than one flat trusted internal network behind a
+  firewall.
+
+3.2 Why the Perimeter Model Fails
+
+The classic castle-and-moat model assumes the hard part is keeping attackers out and
+that everything inside the wall can trust everything else inside the wall. This breaks
+down for reasons that are now well understood: cloud and SaaS mean there often isn't a
+single perimeter; remote and hybrid work means the network location signal is nearly
+meaningless; lateral movement post-compromise is the actual pattern in the overwhelming
+majority of serious breaches — the attacker rarely needs to break the front door if they
+can compromise one workstation or one overprivileged service account and then move
+freely because "internal" was treated as "trusted."
+
+3.3 Practical Implementation Path
+
+Zero Trust is a multi-year journey for an established organization, not a product
+purchase or a quarter-long project. A realistic phased approach:
+
+Phase 1 — Identity foundation. Every human and every workload has a strong, unique
+identity. No shared accounts, no static service-account passwords. MFA enforced
+everywhere feasible, phishing-resistant MFA (FIDO2/WebAuthn hardware keys or platform
+authenticators) for privileged access at minimum.
+
+Phase 2 — Device and workload posture. Access decisions start incorporating device
+health (patched, encrypted, managed) and workload identity (via mTLS or a service mesh
+identity like SPIFFE/SPIRE) rather than trusting "it came from the office network."
+
+Phase 3 — Micro-segmentation. Break the flat internal network into segments enforced at
+the workload level, not just the VLAN level. Default-deny between segments; explicit
+allow rules for known-necessary traffic. This is usually the most operationally painful
+phase and where organizations most often stall — invest in good service-to-service
+authorization tooling (a policy engine like OPA/Cedar, or a service mesh's native
+authorization) before attempting broad segmentation, or the operational burden will kill
+the initiative.
+
+Phase 4 — Continuous, contextual authorization. Move from "authenticated once, trusted
+for the session" to policies that re-evaluate risk signals continuously (impossible
+travel, anomalous access patterns, newly detected device compromise) and can step up
+authentication or revoke access mid-session.
+
+Phase 5 — Full software-defined perimeter. Legacy network-level trust removed entirely;
+every access path, including from a fully corporate-managed device on a corporate
+network, is authenticated and authorized the same way an access path from an untrusted
+network would be.
+
+3.4 Common Pitfalls
+
+Treating Zero Trust as a single product purchase (a ZTNA vendor) rather than an
+architectural transformation. A ZTNA appliance replacing a VPN is a good tactical step
+but is not, by itself, Zero Trust if everything behind it is still flatly trusted.
+
+Doing identity but skipping workload segmentation. Strong human MFA with a flat,
+unsegmented internal network still allows catastrophic lateral movement once any single
+workload is compromised (which happens through software vulnerabilities, not just
+credential theft).
+
+Under-investing in the policy engine. Ad hoc access rules scattered across dozens of
+systems become unauditable and drift out of sync with intent within months. Centralize
+policy decision-making (a PDP) even if enforcement stays distributed (multiple PEPs).
+
+Ignoring the developer experience cost. Zero Trust done badly means constant
+re-authentication friction that engineers route around (shared long-lived tokens hidden
+in scripts, disabled MFA on "just this one service account"). Invest in short-lived
+credential issuance that's ergonomic (workload identity federation, short-TTL tokens
+auto-refreshed by SDKs) so the secure path stays the easy path.
+
+
+SECTION 4: IDENTITY AND ACCESS MANAGEMENT
+============================================================
+
+4.1 Foundational Principles
+
+Identity is the new perimeter — this is not a slogan, it is an accurate description of
+where the actual control point sits in a cloud-native, remote-work, API-driven world.
+IAM architecture deserves proportionally more scrutiny than almost any other system,
+because a flaw here doesn't just expose one system, it can expose everything that trusts
+the identity system.
+
+Separate authentication (proving who you are) from authorization (what you're allowed to
+do) as distinct architectural concerns, even when a single product handles both. Mixing
+them in application code is a common source of subtle bugs — e.g., checking
+"is this token valid" without separately checking "is this token holder allowed to do
+this specific thing to this specific resource."
+
+Prefer centralized identity providers over per-application authentication logic.
+Every application that rolls its own login, password storage, or session management is
+a new place for a critical vulnerability to hide, and a new place that has to be
+independently kept current with best practice. Standardize on an IdP (Okta, Azure
+AD/Entra ID, Auth0, or an open-source equivalent like Keycloak/Ory) and have
+applications delegate.
+
+4.2 Authentication
+
+Password hygiene at the platform level, not just user education: enforce minimum
+entropy indirectly (length over complexity rules — NIST 800-63B has moved away from
+mandatory character-class rules and periodic rotation for this reason), check against
+known-breached password lists at signup and change time, and never store passwords with
+anything weaker than a modern memory-hard hash (Argon2id preferred; bcrypt or scrypt
+acceptable with adequate cost parameters). Never, under any circumstance, log or transmit
+passwords in plaintext, including in "helpful" debug logs — this is a recurring root
+cause of large breaches.
+
+MFA: require it universally for anything privileged, and prefer it universally for
+everything else. Rank factors by phishing resistance: FIDO2/WebAuthn hardware keys and
+platform authenticators (highest — cryptographically bound to the origin, effectively
+unphishable) > authenticator app TOTP/push with number matching > SMS/voice OTP (weakest
+— vulnerable to SIM swapping and should be treated as a fallback, not a primary factor,
+for anything sensitive). Push-based MFA without number matching is vulnerable to MFA
+fatigue attacks (attacker spams approval requests until the user taps approve out of
+annoyance) — number matching or FIDO2 closes this gap.
+
+Passwordless and passkeys: where the user base and platform support it, moving to
+FIDO2/WebAuthn passkeys eliminates the password-related attack surface (credential
+stuffing, phishing, reuse) entirely for that flow. This is the direction the industry
+has converged on through 2026 and should be the default recommendation for new consumer-
+facing authentication builds, with password + MFA retained as a fallback during
+transition.
+
+Session management: short-lived access tokens, refresh tokens rotated on use with reuse
+detection (if a refresh token is used twice, that's a signal of token theft — revoke the
+whole chain), session binding to device/context where feasible, and clear, fast
+revocation paths (a compromised session must be killable in seconds, not by waiting for
+token expiry).
+
+4.3 Authorization Models
+
+RBAC (role-based access control) — good default for the majority of systems. Simple to
+reason about, simple to audit. Weakness: role explosion in complex systems (ends up with
+hundreds of near-duplicate roles) and coarse granularity.
+
+ABAC (attribute-based access control) — decisions based on attributes of the subject,
+resource, action, and environment (e.g., "finance-team members can approve invoices
+under $10k during business hours from a managed device"). More expressive, handles
+complex real-world policy well, but harder to audit and reason about at a glance —
+policies can become as hard to review as code, so they need the same rigor (version
+control, testing, review) as code.
+
+ReBAC (relationship-based access control) — access derived from relationships in a
+graph (e.g., Google Zanzibar-style: "can view if owner, or shared-with, or member of a
+group that's shared-with"). This is the right model for systems with rich sharing
+semantics — documents, projects, multi-tenant SaaS with nested organizations — where
+RBAC/ABAC become awkward. Open-source implementations (OpenFGA, SpiceDB) have matured
+significantly and are a reasonable build-vs-buy default rather than rolling a custom
+graph authorization engine.
+
+Recommendation approach: don't force one model everywhere. Use RBAC for coarse
+platform-level roles (admin, member, viewer), layer ABAC or ReBAC on top for
+resource-level and contextual decisions. Most real systems that started as pure RBAC and
+grew organically end up needing this layering anyway — planning for it early avoids a
+painful mid-life migration.
+
+4.4 Privileged Access Management (PAM)
+
+Standing privileged access is a liability. Move toward just-in-time (JIT) privilege
+elevation: engineers request elevated access for a specific task, it's granted for a
+bounded time window (minutes to hours, not permanent), the request and grant are logged,
+and access auto-expires. This dramatically reduces the window in which a compromised
+privileged credential is useful to an attacker, and it produces a much cleaner audit
+trail than "this person has had prod admin for two years, we're not sure why."
+
+Break-glass procedures: define an emergency access path for when normal JIT/approval
+flows are themselves unavailable (e.g., the IdP is down). Break-glass credentials must
+be: stored offline/out-of-band, individually accountable (not shared), trigger immediate
+loud alerting on use, and force a mandatory post-use review. An unmonitored break-glass
+account is a standing backdoor.
+
+Service accounts and machine identity: treat non-human identities with at least as much
+rigor as human ones — in most mature environments, machine identities (service accounts,
+workload identities, API keys, agent identities) now outnumber human identities by a
+wide margin, and they're frequently the weaker link because they're less visible and
+rotate less often. Prefer workload identity federation (cloud-native short-lived
+credentials tied to workload identity — e.g., AWS IAM roles for service accounts, GCP
+Workload Identity, Azure Managed Identity) over long-lived static API keys wherever the
+platform supports it.
+
+4.5 IAM for the DUKE Agent Platform Specifically
+
+Each specialist agent under the DUKE brain should have its own distinct machine
+identity, not a shared "DUKE service account." This gives per-agent audit trails,
+per-agent least-privilege scoping (this Security Architect agent likely needs read
+access to more systems than a customer-support agent ever should), and the ability to
+revoke or constrain one compromised or misbehaving agent without taking down the whole
+platform. Tool/capability grants per agent should be reviewed with the same rigor as a
+human role grant — arguably more, since an agent can act at machine speed and volume.
+
+4.6 IAM Checklist
+
+- Centralized IdP; no per-app rolled authentication for anything new
+- MFA universal for privileged access, phishing-resistant factor required for admin/root
+- Passwords (where still used) hashed with Argon2id/bcrypt/scrypt at adequate cost;
+  checked against breach corpora at set time
+- Short-lived tokens; refresh rotation with reuse detection
+- Authorization model matches system complexity (RBAC baseline, ABAC/ReBAC layered as
+  needed) and policies are version-controlled and reviewed like code
+- No standing privileged access where JIT elevation is feasible
+- Break-glass path exists, is monitored, and is tested periodically
+- Machine identities inventoried, using short-lived federated credentials over static
+  keys wherever possible
+- Every DUKE agent has a distinct, individually auditable and revocable identity
+
+
+SECTION 5: OAUTH, OIDC, AND SAML
+============================================================
+
+5.1 OAuth 2.0 — What It Is and Isn't
+
+OAuth 2.0 is an authorization delegation protocol, not an authentication protocol. A
+recurring, serious architectural mistake is using a bare OAuth access token as a proof
+of identity ("I got a token back, therefore I know who the user is"). OAuth was designed
+to answer "can this app do X on behalf of this user," not "who is this user" — that's
+what OIDC layers on top of it.
+
+Grant types and current guidance:
+- Authorization Code with PKCE — the default for essentially everything now, including
+  confidential (server-side) clients, not just public/mobile/SPA clients as originally
+  scoped. PKCE closes authorization-code-interception attacks and there is no longer a
+  good reason to omit it.
+- Client Credentials — machine-to-machine, no user involved. Correct for service-to-
+  service API access.
+- Implicit grant — deprecated. Do not use for new builds; it returns tokens directly in
+  the URL fragment with no client authentication and no refresh capability, and has been
+  formally deprecated by the OAuth working group in favor of Auth Code + PKCE.
+- Resource Owner Password Credentials (ROPC) — deprecated, avoid. Requires the client to
+  handle the user's raw password, defeating the purpose of delegation.
+- Device Authorization Grant — correct choice for input-constrained devices (TVs, CLIs,
+  IoT).
+
+Token handling best practice: access tokens short-lived (minutes to low hours); refresh
+tokens longer-lived but rotated on each use with reuse detection; tokens scoped as
+narrowly as possible (a token for "read calendar" should not also be usable to "send
+email" even if issued to the same client); redirect URIs validated with exact string
+matching, never wildcard or prefix matching (a classic open-redirect-to-token-theft
+chain starts with a loose redirect_uri match); state parameter used and validated to
+prevent CSRF on the authorization flow.
+
+5.2 OIDC (OpenID Connect) — Identity on Top of OAuth
+
+OIDC adds the ID token (a signed JWT asserting who the user is) and a standardized
+UserInfo endpoint on top of OAuth's delegation mechanics. When authentication is the
+actual goal, use OIDC's ID token, not the access token, and validate it properly:
+signature verified against the issuer's current published keys (fetched from the
+well-known JWKS endpoint, with key rotation handled — don't hardcode a key), issuer
+(iss) matches the expected IdP, audience (aud) matches this application's client ID,
+expiry (exp) and not-before (nbf) checked, and nonce validated to bind the token to this
+specific authentication request (prevents replay).
+
+5.3 SAML — Still Relevant, Mostly for Enterprise SSO
+
+SAML 2.0 remains the dominant protocol for enterprise B2B SSO integrations even though
+OIDC has won for consumer and API-centric flows — a huge fraction of enterprise
+customers' identity teams still standardize on SAML for federating into SaaS vendors, so
+any DUKE product selling into enterprise needs credible SAML SSO support, not just OIDC.
+
+SAML security essentials: validate the XML signature on the assertion (and validate it
+correctly — XML signature wrapping attacks, where an attacker adds a second unsigned or
+differently-signed assertion that the parser is tricked into processing instead of the
+validated one, are a recurring real-world vulnerability class in SAML implementations;
+use a well-vetted library, never hand-roll SAML XML parsing); check assertion
+conditions (NotBefore/NotOnOrAfter) to prevent replay of old assertions; validate the
+Audience restriction matches this service provider; use a unique InResponseTo /
+correlate to a request this SP actually issued to prevent unsolicited-response replay;
+prefer encrypted assertions in addition to signed ones when the assertion carries
+sensitive attributes.
+
+5.4 Choosing Between Them
+
+For new consumer-facing authentication: OIDC. For new API authorization/delegation:
+OAuth 2.0 with PKCE. For enterprise SSO where the customer's identity team dictates the
+protocol: support both OIDC and SAML at the platform level rather than trying to
+convince every enterprise customer to move off SAML — that's a losing battle that costs
+deals, not a security-architecture hill worth dying on.
+
+5.5 Common Implementation Pitfalls
+
+- Trusting client-supplied redirect_uri without exact-match validation.
+- Confusing the OAuth access token with proof of identity (skipping ID token / UserInfo
+  validation).
+- Not validating JWT signatures at all, or validating them but not checking the
+  algorithm — the classic "alg: none" attack where a token accepts an unsigned JWT
+  because the verification code trusts the algorithm field from the token itself rather
+  than pinning the expected algorithm. Always pin the expected signing algorithm in the
+  verifier config; never take it from the token.
+- Storing tokens insecurely on the client — access/refresh tokens in localStorage are
+  vulnerable to any XSS on that origin; prefer httpOnly, Secure, SameSite cookies for
+  browser-based session tokens where the architecture allows it, or short-lived
+  in-memory-only tokens with silent refresh via a secure backend.
+- Over-scoping tokens "just in case" rather than to the specific need of the calling
+  client.
+
+
+SECTION 6: SECURE SOFTWARE DEVELOPMENT LIFECYCLE
+============================================================
+
+6.1 Shift-Left, But Don't Shift Everything Left
+
+"Shift left" is correct in spirit — the earlier a defect is caught, the cheaper it is to
+fix, by roughly an order of magnitude at each stage it survives to (design vs. code vs.
+test vs. production). But shifting left without also maintaining strong right-side
+controls (runtime detection, incident response) leaves an organization exposed to
+whatever the left-side controls miss, and nothing catches everything. Design a secure
+SDLC with controls distributed across the whole lifecycle, weighted toward the earlier
+stages but not exclusively so.
+
+6.2 Stage-by-Stage Controls
+
+Requirements/Design stage: threat modeling (Section 2) for anything crossing a trust
+boundary; security requirements captured alongside functional ones (data classification,
+retention, regulatory scope) rather than discovered during a pre-launch review; abuse
+case brainstorming alongside use case definition ("how would someone misuse this
+feature" as a standard design question, not an afterthought).
+
+Development stage: secure coding standards enforced via linting where automatable (see
+Section 14); pre-commit hooks for secret scanning (never rely solely on post-commit
+detection — once a secret hits git history, rotation is mandatory even after removal,
+because history persists in clones/forks); mandatory code review with at least one
+reviewer who is not the author for anything touching auth, crypto, or data access logic;
+dependency vulnerability scanning integrated into the IDE/PR workflow, not just a
+periodic batch job.
+
+Build/CI stage: SAST (static analysis) run on every PR, tuned to minimize false-positive
+fatigue (an under-tuned SAST tool that cries wolf gets ignored — invest in tuning over
+adding more rules); software composition analysis (SCA) for dependency vulnerabilities
+and license compliance; SBOM generated as a build artifact (Section 18); container image
+scanning if applicable; build provenance/signing (SLSA-aligned) so downstream consumers
+can verify what they're deploying actually came from this pipeline and wasn't tampered
+with in transit.
+
+Test stage: DAST (dynamic analysis) against a staging environment; API security testing
+against the OpenAPI/schema definition; for anything security-critical, dedicated
+penetration testing (internal red team or external firm) on a cadence proportional to
+risk — annually at minimum for anything handling regulated data, more frequently for
+major architecture changes.
+
+Release/Deploy stage: deployment gated on passing security scans above a defined
+severity threshold (not "zero findings," which incentivizes gaming the scanner — a
+defined, risk-based bar); infrastructure-as-code scanned the same way application code
+is; secrets injected at deploy time from a vault, never baked into images or config
+committed to source.
+
+Operate/Monitor stage: runtime detection (Section 10-11), vulnerability management
+against production (Section 12), and a feedback loop where production incidents update
+the threat model and the SAST/DAST rule set — every real incident should make the next
+review of similar systems catch that class of bug automatically, or the lesson is being
+lost.
+
+6.3 Where Manual Review Is Non-Negotiable
+
+Automation catches known patterns; it does not catch novel logic flaws, business-logic
+authorization bugs (a user can access another user's resource by changing an ID — this
+is IDOR/BOLA and remains one of the most common and highest-impact API vulnerability
+classes, and it is almost never caught by SAST/DAST because the request is
+"syntactically valid," just logically wrong), or architecture-level trust boundary
+mistakes. Reserve senior human review for: authentication/authorization logic changes,
+cryptography usage (implementing or configuring, not just calling a vetted library),
+multi-tenant isolation boundaries, and anything handling payment or regulated data.
+
+6.4 Common SDLC Pitfalls
+
+- Security review as a single late-stage gate rather than distributed checkpoints —
+  produces either rubber-stamping (too late to meaningfully change course) or shipping
+  delays (findings that should have been caught in design become expensive rework).
+- Tooling sprawl without tuning — five scanners each producing noisy findings that
+  nobody triages is worse than one well-tuned scanner that developers trust.
+- Treating SBOM/SCA as a compliance checkbox rather than an active input to
+  vulnerability response — the SBOM is only valuable if there's a process that
+  actually queries it the day a new CVE drops.
+- No feedback loop from production incidents back into SDLC controls.
+
+
+SECTION 7: THREAT MODELING TO PRODUCTION — SECURE CODING STANDARDS
+============================================================
+
+7.1 Input Handling
+
+Validate all input at the trust boundary where it enters the system, using allow-lists
+(define what's valid) over deny-lists (define what's forbidden) wherever the input space
+is enumerable — deny-lists are perpetually incomplete because attackers only need to
+find the one pattern the list missed. Validate type, length, format, and range, and
+validate server-side always, regardless of what client-side validation exists (client-
+side validation is a UX feature, not a security control — it is trivially bypassed).
+
+7.2 Injection Prevention
+
+SQL injection: parameterized queries / prepared statements exclusively — string
+concatenation or interpolation into SQL is never acceptable for any input that
+originates outside the application's own trusted constants, no exceptions for "it's just
+an internal admin tool." ORM usage reduces but does not eliminate risk — raw query
+escape hatches in ORMs are a common place injection reappears.
+
+Command injection: avoid shelling out to OS commands with any user-influenced input
+wherever a native library alternative exists; where shelling out is unavoidable, use
+APIs that pass arguments as an array (avoiding shell interpretation) rather than building
+a single command string, and validate against a strict allow-list.
+
+Cross-site scripting (XSS): rely on the framework's default output encoding (modern
+frameworks like React, Vue, Angular auto-escape by default) and treat any use of
+"dangerouslySetInnerHTML," "v-html," raw DOM manipulation, or equivalent as a flagged,
+reviewed exception, not routine code. Content-Security-Policy as defense in depth, not
+as the primary control — CSP mitigates impact if encoding fails, it should not be relied
+upon as the only XSS defense.
+
+Deserialization: never deserialize untrusted data with formats/libraries that support
+arbitrary object instantiation or code execution during deserialization (this is a
+recurring source of critical RCE vulnerabilities across many language ecosystems). Prefer
+data-only formats (JSON with a strict schema) over native object serialization for
+anything crossing a trust boundary.
+
+Server-Side Request Forgery (SSRF): for any feature that fetches a URL supplied or
+influenced by a user (webhooks, "import from URL," link previews — and note this is
+directly relevant to any DUKE agent capability that fetches URLs on a user's behalf),
+validate against an allow-list of permitted schemes/hosts where possible, resolve DNS
+and validate the resolved IP is not in a private/link-local/metadata-endpoint range
+(this is the classic path to cloud credential theft via the 169.254.169.254 metadata
+endpoint), and re-validate after any redirect rather than trusting only the initial URL.
+
+7.3 Broken Access Control / IDOR-BOLA
+
+This deserves explicit emphasis because it has topped or near-topped the OWASP Top 10
+for multiple consecutive revisions and is consistently underinvested in relative to its
+real-world impact. The pattern: an endpoint checks that the requester is authenticated,
+but fails to check that the requester is authorized for this specific resource (e.g.,
+GET /invoices/12345 returns invoice 12345 regardless of whether the caller owns it).
+Mitigation is architectural: authorization checks must be enforced at the data-access
+layer (ideally centrally, via a policy engine or consistent middleware pattern) rather
+than reimplemented ad hoc in every endpoint handler, because ad hoc reimplementation is
+exactly where individual endpoints get missed. Every new endpoint that takes a resource
+identifier should have an explicit, reviewed answer to "who is allowed to access this
+specific instance," not just "is the caller logged in."
+
+7.4 Error Handling and Logging
+
+Never leak internal detail (stack traces, database errors, internal file paths, library
+versions) in responses to end users — return a generic error to the client, log the full
+detail server-side with a correlation ID the user can quote when reporting an issue.
+Never log sensitive data in plaintext (passwords, full payment card numbers, full
+tokens, health/financial PII beyond what's operationally necessary) — apply field-level
+redaction at the logging layer, not as a manual discipline every developer has to
+remember.
+
+7.5 Secure Defaults
+
+Every configurable security control should default to the secure setting, requiring
+explicit, reviewed action to weaken it — not the reverse. Fail closed, not open: if an
+authorization check errors out, the correct behavior is deny, not allow. This single
+principle, consistently applied, prevents a large class of "the system was technically
+broken and that break happened to grant access" incidents.
+
+
+SECTION 8: CRYPTOGRAPHY AND PKI
+============================================================
+
+8.1 The First Rule
+
+Do not implement custom cryptographic primitives or protocols. Use well-vetted,
+widely-reviewed libraries (libsodium/NaCl, the language's standard TLS stack, BoringSSL/
+OpenSSL via a maintained wrapper) and well-established constructions. Nearly every
+catastrophic cryptographic failure in the industry's history traces back to someone
+implementing their own cipher, their own key exchange, or their own "obviously safe"
+tweak to a standard construction. The architect's job is choosing and correctly
+configuring proven building blocks, not inventing new ones.
+
+8.2 Symmetric Cryptography
+
+AES-256-GCM (or AES-256-GCM-SIV where nonce-misuse resistance is valuable, e.g. contexts
+where a unique nonce per encryption can't be strictly guaranteed) is the standard choice
+for authenticated encryption. ChaCha20-Poly1305 is an excellent alternative,
+particularly on platforms without AES hardware acceleration (mobile, some embedded).
+Always use an AEAD (authenticated encryption with associated data) construction — never
+encryption without integrity protection (e.g., raw CBC mode without a MAC), because
+unauthenticated encryption is vulnerable to padding oracle and bit-flipping attacks that
+AEAD modes close off by design. Never reuse a nonce with the same key under GCM — nonce
+reuse under GCM is catastrophic, fully breaking confidentiality and authenticity for
+those messages.
+
+8.3 Asymmetric Cryptography
+
+RSA-2048 is the practical floor for new systems (RSA-3072/4096 where long-term
+protection matters and the performance cost is acceptable); ECC (P-256/P-384, or
+Ed25519/X25519 for signing and key exchange respectively) is generally preferred for new
+designs — smaller keys, faster operations, and Ed25519 in particular has a strong track
+record for implementation safety (deterministic signatures avoid a class of nonce-reuse
+signature-forgery bugs that have bitten ECDSA implementations repeatedly, including in
+production systems that leaked private keys through this exact flaw). For new
+greenfield systems in 2026, defaulting to Ed25519/X25519 over RSA where the ecosystem
+supports it is the right call — better performance and a narrower footgun surface.
+
+8.4 Hashing
+
+For password storage: Argon2id (winner of the Password Hashing Competition, current
+best practice) with tuned memory/time/parallelism cost parameters; bcrypt or scrypt are
+acceptable fallbacks where Argon2id isn't available in the target ecosystem. Never use
+general-purpose fast hashes (MD5, SHA-1, SHA-256 alone) for password storage — they are
+designed to be fast, which is exactly the wrong property for a password hash, since it
+makes brute-force/GPU-cracking cheap.
+
+For data integrity and general hashing: SHA-256 or SHA-3 family. MD5 and SHA-1 are
+cryptographically broken for collision resistance and must not be used anywhere
+collision resistance matters (digital signatures, certificate fingerprints) — they may
+still appear in legacy non-security contexts (e.g., a checksum for accidental corruption
+detection) but that usage should be clearly labeled as non-security-relevant to prevent
+future misuse.
+
+8.5 Key Management
+
+Key management is where cryptographic architecture actually succeeds or fails in
+practice — the algorithms rarely fail; the key handling almost always eventually does if
+not architected deliberately. Principles:
+
+Generate keys with a cryptographically secure random source (the OS CSPRNG — never a
+custom or seeded-from-predictable-input generator). Store keys in a dedicated secrets/
+key management system (cloud KMS — AWS KMS, GCP Cloud KMS, Azure Key Vault — or a
+self-hosted HSM/vault like HashiCorp Vault with an HSM backend for the highest-value
+keys), never in source code, container images, or environment variables set via
+plaintext config for anything beyond the lowest-sensitivity use. Use envelope
+encryption for large-scale data encryption: a KMS-held master key encrypts per-object or
+per-tenant data encryption keys, which encrypt the actual data — this bounds the blast
+radius of any single key compromise and makes key rotation tractable at scale, since
+rotating the master key doesn't require re-encrypting all the underlying data at once.
+
+Rotate keys on a defined schedule and immediately upon suspected compromise. Design
+rotation into the system from day one (versioned keys, ability to decrypt with an old
+key while encrypting with the new one) — retrofitting rotation capability onto a system
+that assumed a single static key is a significant and error-prone migration.
+
+Separate key roles: signing keys, encryption keys, and authentication keys should be
+distinct, not one key reused across purposes — using the same key for multiple
+cryptographic purposes can undermine the security proofs both usages individually relied
+on.
+
+8.6 PKI (Public Key Infrastructure)
+
+For internal service-to-service authentication, run an internal CA (or use a managed
+one — cloud provider private CA services, or SPIFFE/SPIRE for workload identity issuing
+short-lived X.509 SVIDs) rather than sharing static credentials between services. Short
+certificate lifetimes (hours to days, auto-rotated) for workload identity dramatically
+reduce the value of a stolen certificate to an attacker, at the cost of operational
+complexity that a good automation layer (cert-manager in Kubernetes, SPIRE agents)
+absorbs.
+
+For public-facing TLS: automate issuance and renewal (ACME/Let's Encrypt or a managed
+certificate service) — manual certificate renewal is a recurring, entirely preventable
+cause of production outages. Enforce TLS 1.2 minimum, prefer TLS 1.3 wherever the client
+ecosystem supports it (better performance, removes several legacy cipher weaknesses by
+design). Monitor certificate expiry proactively with alerting well ahead of expiry, not
+reactively when a certificate has already lapsed.
+
+Certificate/key compromise response: have a documented, tested revocation path (CRL/OCSP
+for public certs; immediate rotation and re-issuance for internal PKI) and know in
+advance who is authorized to trigger it — this should not be a decision made for the
+first time during an incident.
+
+8.7 Cryptographic Agility and Post-Quantum Considerations
+
+Design systems so cryptographic algorithms can be swapped without a full architectural
+rewrite — version fields in encrypted payloads/tokens, abstraction layers around crypto
+calls rather than algorithm choices hardcoded throughout the codebase. This isn't
+theoretical: the industry is in the early-to-middle stages of migrating toward
+post-quantum-resistant algorithms (NIST has standardized ML-KEM/Kyber for key
+encapsulation and ML-DSA/Dilithium and SLH-DSA for signatures) for systems where
+long-term confidentiality matters against a "harvest now, decrypt later" threat model —
+relevant for anything encrypting data today that must remain confidential for a decade
+or more. For most systems this is not yet an urgent migration in 2026, but new systems
+with long confidentiality horizons should be built with crypto-agility so the eventual
+PQC migration is a configuration change, not a rewrite. Hybrid schemes (classical +
+post-quantum combined) are the current pragmatic approach where PQC is adopted early,
+hedging against both a classical break and any not-yet-discovered weakness in the newer
+PQC algorithms.
+
+
+SECTION 9: SECRETS MANAGEMENT
+============================================================
+
+9.1 Core Principle
+
+No secret (API key, database credential, signing key, service account token) should
+ever live in source code, CI/CD configuration files, container images, or unencrypted
+in a config file on disk. Every secret should originate from a dedicated secrets
+management system and be injected at runtime or fetched dynamically.
+
+9.2 Architecture
+
+Centralize on a secrets manager (HashiCorp Vault, cloud-native equivalents like AWS
+Secrets Manager / GCP Secret Manager / Azure Key Vault) rather than scattering secrets
+across CI variables, .env files copied between machines, and ad hoc shared documents.
+Prefer dynamic, short-lived secrets over long-lived static ones wherever the downstream
+system supports it — a database credential that's generated on demand with a short TTL
+and auto-revoked is far less valuable to an attacker than a static password that's been
+copy-pasted into three different config files over the years and nobody remembers all
+the places it lives.
+
+Access to secrets should itself be governed by the IAM system (Section 4) — a secrets
+manager that anyone with network access can query is not meaningfully different from a
+shared plaintext file. Every secret access should be logged and attributable to a
+specific identity (human or workload), enabling detection of anomalous access patterns
+and giving incident response a starting point.
+
+9.3 Application-Level Practices
+
+Never commit secrets to git, even temporarily "to test something" — git history is
+effectively permanent (forks, clones, cached CI artifacts persist even after a
+force-push or history rewrite on the primary repo). Run pre-commit secret scanning
+locally and repo-wide scanning in CI as a backstop, not the primary control (the primary
+control is architecture that makes committing a secret unnecessary in the first place —
+if the app is designed to fetch from a vault, there's rarely a secret to accidentally
+commit).
+
+If a secret is ever committed, the response is rotation, not just removal — removing a
+secret from the current file state does not un-expose it from history, and treating
+"delete the line" as sufficient response is a common, dangerous mistake.
+
+Secrets in transit: never pass secrets as command-line arguments (visible in process
+listings to any other process/user on the same host) or as URL query parameters
+(logged by proxies, browsers, and web servers by default). Prefer environment variables
+injected securely at process start, or better, a runtime fetch from the secrets manager
+with no persistence to disk or process environment at all where the platform supports
+it.
+
+9.4 Secrets in the DUKE Agent Context
+
+Agent credentials for calling downstream tools/APIs deserve the same architecture as any
+service credential — scoped, short-lived where feasible, and never embedded in a
+prompt, agent configuration file, or (critically) in this kind of knowledge-base
+document. Any credential an agent needs to authenticate to an external system should be
+injected at call time from a secrets manager via the orchestration layer, never
+hardcoded into agent instructions or memory, both because that content can leak through
+the agent's own output (an agent can be induced, via prompt injection, to repeat back
+its own configuration) and because knowledge-base content is exactly the kind of
+long-lived, widely-retrieved artifact that should never carry live credentials.
+
+9.5 Rotation and Incident Response
+
+Define rotation cadence per secret class based on sensitivity (e.g., high-privilege
+infrastructure credentials rotated more aggressively than a low-sensitivity third-party
+API read key), and — separately — a documented, rehearsed emergency rotation procedure
+for suspected compromise that can execute in minutes, not days. The speed of the
+emergency path matters more than the routine rotation cadence; an organization that
+takes a week to rotate a leaked key after discovering the leak has, in practice, no
+incident response capability for this category of event.
+
+
+SECTION 10: NETWORK SECURITY
+============================================================
+
+10.1 Segmentation
+
+Move away from flat, trust-everything-inside networks toward workload-level
+segmentation (Section 3.3, Phase 3). At minimum, separate networks by trust tier:
+public-facing edge, application tier, data tier, and management/admin plane, with
+default-deny between tiers and explicit, minimal allow rules. In cloud environments,
+use security groups / network security groups scoped per-service rather than broad
+shared groups, and periodically audit for overly permissive rules (0.0.0.0/0 ingress on
+anything beyond the actual public edge is a recurring finding worth actively hunting
+for, not just waiting to be flagged).
+
+10.2 Encryption in Transit
+
+TLS everywhere, including internal service-to-service traffic — "it's inside our VPC so
+it doesn't need encryption" is a perimeter-model assumption that doesn't hold once
+lateral movement or a misconfigured peering/shared-tenancy risk is in the threat model.
+A service mesh (Istio, Linkerd, or cloud-native equivalents) is a practical way to get
+mTLS between services without every application team hand-rolling certificate handling.
+
+10.3 DDoS and Edge Protection
+
+Layer defenses: a CDN/edge network (Cloudflare, AWS Shield/CloudFront, Fastly) absorbing
+volumetric attacks before they reach origin infrastructure; rate limiting at multiple
+layers (edge, API gateway, and application) since edge rate limiting alone won't catch
+application-logic-layer abuse (e.g., account enumeration or credential stuffing that
+stays under volumetric thresholds but is still clearly abusive at the application-logic
+level); a WAF tuned to the specific application's traffic patterns (default rule sets
+are a starting point, not a finished configuration — untuned WAFs generate enough false
+positives that teams disable rules or ignore alerts).
+
+10.4 Egress Control
+
+Egress filtering is underused relative to its value. Unrestricted outbound traffic from
+production workloads means a compromised service can exfiltrate data or call out to
+attacker infrastructure freely. Default-deny egress with explicit allow-listing for
+known-necessary destinations meaningfully raises the cost of data exfiltration and
+command-and-control callback, even against an attacker who has already achieved code
+execution.
+
+10.5 Network Monitoring
+
+Flow logs (VPC flow logs or equivalent) retained and actually reviewed/alerted on, not
+just stored for compliance. Network-based intrusion detection as one signal among many
+feeding the SIEM (Section 12), not a standalone control assumed to catch everything by
+itself — modern lateral movement frequently uses legitimate protocols and credentials,
+which pure signature-based network IDS is poorly positioned to catch; behavioral and
+identity-centric detection increasingly matters more than packet-level signature
+matching.
+
+
+SECTION 11: CLOUD SECURITY
+============================================================
+
+11.1 Shared Responsibility Model
+
+Be precise about what the cloud provider secures (physical infrastructure, hypervisor,
+and — for managed services — increasingly more of the stack) versus what the
+organization secures (identity, data, configuration, application code, and, critically,
+correct use of the provider's security features). The single most common cause of
+cloud breaches remains customer-side misconfiguration, not provider-side failure —
+publicly exposed storage buckets, overly permissive IAM roles, unencrypted databases
+reachable from the internet, default credentials left in place. This argues for treating
+cloud security posture management as an ongoing, automated discipline, not a one-time
+setup task.
+
+11.2 Cloud Security Posture Management (CSPM)
+
+Run continuous automated configuration scanning against a defined baseline (CIS
+Benchmarks for the relevant cloud provider are the standard starting baseline) rather
+than periodic manual audits. Treat drift from the secure baseline as an incident-
+worthy signal, not just a dashboard color change — a bucket that goes from private to
+public, even briefly, warrants investigation into why the change happened and who made
+it, because it's either a dangerous mistake or a sign of compromise.
+
+11.3 Multi-Tenancy and Data Isolation
+
+For any multi-tenant SaaS system (highly relevant to DUKE Global's own architecture),
+tenant isolation is one of the highest-value things to get right architecturally, because
+a cross-tenant data leak is often the single most damaging class of incident a SaaS
+company can have — it's a breach of every affected customer simultaneously and tends to
+be maximally reputation-damaging.
+
+Isolation model choice is a real trade-off, not a default:
+- Silo (separate infrastructure/database per tenant) — strongest isolation, highest
+  operational cost and complexity, best for the highest-sensitivity tenants or as a
+  premium tier.
+- Pool with row-level tenant scoping (shared database, every table/query scoped by
+  tenant_id) — most common, cost-efficient, but the architecture must make it
+  structurally hard to forget the tenant filter (e.g., enforce at the database layer via
+  row-level security, not solely trusted to application code remembering a WHERE clause
+  on every single query — this is exactly the kind of control that, left to manual
+  discipline, eventually gets missed on one endpoint under deadline pressure).
+- Bridge (mixed — some resources siloed, most pooled) — pragmatic middle ground, common
+  in real systems that started pooled and are adding isolation for premium/regulated
+  tenants without a full re-architecture.
+
+Whichever model is chosen, tenant isolation should be tested adversarially, not just
+assumed from the design — a specific, recurring test case: authenticate as tenant A, and
+programmatically attempt to access every class of tenant B resource by ID. This is cheap
+to automate and catches a class of bug that code review reliably misses.
+
+11.4 Cloud IAM Specifics
+
+Cloud IAM misconfiguration is its own major risk category distinct from application
+IAM. Avoid wildcard permissions (Action: "*" or overly broad managed policies) on
+anything beyond genuinely break-glass roles; prefer customer-managed least-privilege
+policies scoped to the specific actions a role actually needs, derived from observed
+access patterns (many cloud providers offer access-analyzer tooling that shows what
+permissions a role has actually used over a period — use this to right-size policies
+rather than guessing). Cross-account/cross-project trust relationships should be
+enumerated and periodically reviewed — an unused trust relationship left over from a
+long-finished integration is a standing risk with no offsetting benefit.
+
+11.5 Data Protection in the Cloud
+
+Encrypt data at rest by default (most managed cloud data stores make this close to a
+checkbox now — there is very rarely a good reason to leave it off) and layer envelope
+encryption (Section 8.5) for the most sensitive data classes so the cloud provider's
+default key management isn't the only thing standing in the way of data exposure if
+storage-level access controls fail. Classify data on creation/ingestion (public,
+internal, confidential, restricted) and let that classification drive encryption,
+retention, and access-logging requirements automatically rather than relying on
+per-team manual judgment applied inconsistently.
+
+
+SECTION 12: KUBERNETES SECURITY
+============================================================
+
+12.1 Cluster-Level Hardening
+
+Run CIS Kubernetes Benchmark scanning continuously (kube-bench or a managed equivalent),
+enable and enforce audit logging on the API server, and restrict access to the
+Kubernetes API server itself with the same rigor as any other privileged control plane —
+API server access is effectively cluster-admin-adjacent if broadly granted. Use a
+managed control plane (EKS/GKE/AKS) rather than self-managing the control plane unless
+there's a specific, well-justified reason not to — the provider absorbs a meaningful
+share of control-plane hardening and patching burden.
+
+12.2 Workload Identity and RBAC
+
+Kubernetes RBAC should follow the same least-privilege discipline as cloud IAM: avoid
+cluster-admin bindings for anything beyond genuine cluster operators, scope
+ServiceAccounts per-workload rather than sharing the default ServiceAccount across
+unrelated pods, and disable auto-mounting of the ServiceAccount token for pods that
+don't need to call the Kubernetes API at all (a large fraction of application pods have
+zero legitimate reason to hold API server credentials, and a mounted, unused token is
+pure risk).
+
+For pods that need to call cloud provider APIs, use workload identity federation
+(IRSA on EKS, Workload Identity on GKE, Azure AD Workload Identity) rather than
+long-lived cloud credentials baked into a Secret — this closes one of the more common
+lateral-movement paths from a compromised pod to broader cloud account access.
+
+12.3 Pod and Container Hardening
+
+Enforce Pod Security Standards (the "restricted" profile as the default posture for
+anything not specifically requiring elevated privilege): no privileged containers, no
+host network/PID/IPC namespace sharing, read-only root filesystem where the application
+allows it, non-root user enforced, capabilities dropped to the minimum actually needed
+(drop ALL, add back only specific required capabilities), and no privilege escalation
+allowed. Admission control (OPA Gatekeeper, Kyverno, or the built-in Pod Security
+Admission controller) should enforce these as policy, not rely on every deployment
+manifest author remembering to set them correctly by hand.
+
+12.4 Network Policy
+
+Kubernetes' default is flat pod-to-pod networking within a cluster — every pod can talk
+to every other pod unless NetworkPolicies say otherwise. Treat this the same as flat
+network trust anywhere else (Section 10.1): default-deny NetworkPolicies with explicit
+allow rules per service relationship. This requires a CNI plugin that actually enforces
+NetworkPolicy (not all do by default) — verify this rather than assuming it.
+
+12.5 Image and Supply Chain
+
+Scan container images for known vulnerabilities before deployment (integrated into CI,
+Section 6.2), and enforce that only images from a trusted, signed source can be deployed
+(image signing via cosign/Sigstore, enforced via admission control) — this closes the
+gap where a compromised registry or a supply-chain attack could inject a malicious image
+that would otherwise deploy with no verification that it actually came from this
+organization's own build pipeline. Minimize base image footprint (distroless or
+minimal base images) to reduce the exploitable surface and the volume of CVEs that need
+tracking per image.
+
+12.6 Secrets in Kubernetes
+
+Native Kubernetes Secrets are base64-encoded, not encrypted, by default in etcd unless
+encryption-at-rest is explicitly enabled for the cluster — enable it. Prefer an external
+secrets operator (integrating with the organization's central secrets manager, Section
+9) over relying solely on native Secrets for anything sensitive, both for consistency
+with the org's broader secrets architecture and because it enables the same rotation and
+audit properties across Kubernetes and non-Kubernetes workloads alike.
+
+12.7 Runtime Detection
+
+Static hardening reduces attack surface but doesn't detect active exploitation. Runtime
+security tooling (Falco or equivalent) watching for anomalous syscalls, unexpected
+process execution inside containers, or unexpected network connections gives a
+detection layer for the cases where a vulnerability gets exploited despite the
+preventive controls — this matters because container escape and in-cluster lateral
+movement techniques continue to evolve, and no static baseline stays complete forever.
+
+
+SECTION 13: API SECURITY
+============================================================
+
+13.1 API Security as Its Own Discipline
+
+APIs are now the primary attack surface for most organizations — more so than
+traditional web UI — because APIs expose application logic and data access directly,
+often with weaker input validation than a UI that constrains what a user can even
+submit, and because API consumers include not just browsers but other services, mobile
+apps, and (increasingly) AI agents calling on users' behalf. The OWASP API Security Top
+10 is the standard reference and should inform review checklists directly; the two
+highest-impact, most consistently underestimated categories are broken object-level
+authorization (BOLA/IDOR, Section 7.3) and broken function-level authorization (a
+regular user can call an admin-only endpoint because the endpoint checks
+authentication but not the specific role/permission required).
+
+13.2 API Design for Security
+
+Design authorization checks as a first-class part of the API contract, not an
+implementation detail — document, for every endpoint, exactly what identity and
+permission is required, and test that documentation adversarially rather than trusting
+it as aspirational. Avoid exposing internal object IDs sequentially where feasible
+(sequential IDs make object enumeration trivial even before considering authorization
+bugs) — UUIDs or similar non-guessable identifiers raise the cost of blind enumeration,
+though this is a defense-in-depth measure, not a substitute for actual authorization
+checks.
+
+Rate limit at the API layer per-identity (not just per-IP, which is easily distributed
+around) and apply tighter limits to sensitive operations (password reset, MFA
+verification, payment actions) than to general read traffic — these are the operations
+where brute-force and abuse have the highest payoff for an attacker.
+
+13.3 Schema and Input Validation
+
+Validate every request against a strict schema (OpenAPI/JSON Schema) at the gateway or
+application boundary, rejecting anything that doesn't conform rather than accepting and
+attempting to gracefully handle malformed input — a strict-by-default posture closes off
+a wide range of injection and logic-abuse vectors before they reach application code.
+Explicitly reject mass-assignment vulnerabilities — never blindly bind a full request
+body to an internal data model (a classic pattern: a user-update endpoint that binds the
+whole request JSON to the User object lets a client set fields like "role" or
+"isAdmin" that were never intended to be client-settable). Allow-list bindable fields
+explicitly per endpoint.
+
+13.4 API Gateway as a Control Point
+
+Centralize cross-cutting API security concerns (authentication verification, rate
+limiting, schema validation, logging) at a gateway layer rather than reimplementing them
+per-service — this is both an efficiency gain and a security one, since a centrally
+enforced control can't be accidentally skipped by one service the way a
+per-service-reimplemented control can. Backend services should still perform their own
+authorization checks (defense in depth — never rely on the gateway as the only
+authorization enforcement point, since an attacker who reaches a backend service
+directly, bypassing the gateway via a misconfiguration or an internal-network foothold,
+should still be denied).
+
+13.5 APIs for AI Agent Consumption
+
+This is a fast-emerging area directly relevant to DUKE's own architecture and to any
+product DUKE builds that exposes APIs for agent consumption (its own agents, or
+third-party agents integrating with DUKE). Agents calling APIs on a user's behalf need
+the same least-privilege, scoped-token discipline as any other client — arguably more,
+because an agent's calling pattern can be influenced by adversarial input (Section 2.5)
+in ways a human clicking through a UI generally isn't. Prefer OAuth-scoped, short-lived,
+task-specific tokens for agent-initiated API calls over broad standing API keys, and log
+agent API calls with enough context (what triggered the call, which agent, which
+upstream instruction chain) to make post-hoc investigation of an anomalous call
+tractable — this is a new and still-maturing logging requirement that traditional API
+gateway logging wasn't originally designed around.
+
+
+SECTION 14: SECURE CODING STANDARDS AND ENGINEERING PRACTICES
+============================================================
+
+14.1 Standards as Enforced Defaults, Not Documents
+
+A secure coding standard that lives only in a wiki page gets read once and forgotten.
+Encode standards as enforced tooling wherever possible: linter rules that fail the build
+(not just warn) for known-dangerous patterns (e.g., use of eval, string-built SQL,
+disabled certificate validation, hardcoded secrets patterns), pre-approved
+libraries/frameworks for security-sensitive functions (crypto, auth, templating) so
+individual engineers aren't each independently deciding which crypto library or hashing
+function is safe, and PR templates that prompt for the specific security
+considerations relevant to the change type (does this touch auth? does this handle PII?
+does this call an external URL?).
+
+14.2 Code Review for Security
+
+Security-focused code review is a distinct skill from general code review and should be
+explicitly taught, not assumed. Reviewers should specifically ask, for any change: what
+new trust boundary does this cross, if any; what happens if every input is adversarial
+rather than well-formed; does this change any authorization logic, even incidentally;
+does this introduce a new place secrets, PII, or credentials flow through. A checklist
+embedded in the PR template, kept short (5-8 items) so it's actually used rather than
+skipped, outperforms a long document nobody references under deadline pressure.
+
+14.3 Dependency Management
+
+Track and minimize the dependency footprint — every dependency is inherited attack
+surface and inherited trust (Section 18 covers supply chain in depth). Pin dependency
+versions and update deliberately via a reviewed process rather than either "never
+update" (accumulates known vulnerabilities) or fully automatic unreviewed updates for
+anything beyond low-risk patch-level bumps (a fully automated major/minor version bump
+can silently introduce a compromised or behaviorally-broken dependency with no human
+in the loop — automated update tooling like Dependabot/Renovate is valuable but its
+output should still flow through normal CI and, for anything beyond trivial patch bumps,
+review).
+
+14.4 Testing for Security
+
+Security-relevant unit and integration tests deserve the same first-class status as
+functional tests: authorization boundary tests (explicitly testing that user A cannot
+access user B's resources, not just that user A can access their own — the negative
+case is the one that actually catches BOLA-class bugs and is the one teams most often
+skip), input validation edge cases (empty, oversized, wrong-type, boundary values,
+known-malicious patterns), and regression tests written for every security bug found in
+review or production so the same class of bug can't silently reappear.
+
+
+SECTION 15: SOC, SIEM, AND SECURITY MONITORING
+============================================================
+
+15.1 What a Modern SOC Function Needs
+
+Whether the SOC function is a dedicated team, a shared platform-team responsibility, or
+(for a smaller organization) a hybrid of internal capability plus an MSSP, the
+architecture underneath it needs the same fundamentals: comprehensive, centralized log
+collection; detection logic tuned to the organization's actual risk profile rather than
+a generic out-of-the-box rule pack; a triage and escalation workflow with clear
+severity definitions; and a feedback loop where confirmed incidents refine detection
+logic (Section 6.2's closing point applies here directly).
+
+15.2 Log Collection and SIEM Architecture
+
+Centralize logs from every meaningful source — application logs, infrastructure/cloud
+audit logs (CloudTrail or equivalent — this is frequently the single highest-value log
+source for detecting account/credential misuse), network flow logs, identity provider
+logs (authentication events, MFA challenges, admin actions), and endpoint telemetry —
+into a SIEM (Splunk, Elastic Security, Microsoft Sentinel, or a cloud-native equivalent)
+rather than leaving them siloed per-system where correlation across sources becomes
+manual, slow, and reliant on someone remembering to check five different consoles during
+an active incident.
+
+Retention should be driven by both operational need (how far back does an investigation
+typically need to look) and compliance requirement (many frameworks mandate specific
+minimum retention periods) — commonly a hot/searchable tier for 30-90 days and a
+cheaper cold/archival tier for 1+ years, tuned to the organization's actual compliance
+obligations and incident investigation patterns.
+
+15.3 Detection Engineering
+
+Move beyond static signature matching toward behavioral and correlation-based detection
+where feasible — e.g., not just "flag this known-bad IP" but "flag a login from a
+new device immediately followed by a bulk data export," which requires correlating
+identity, network, and application-layer events together. Detection rules should be
+version-controlled, tested against both known-attack samples and known-benign traffic
+(to catch false-positive regressions before they hit production alerting), and mapped
+to a framework like MITRE ATT&CK so coverage gaps are visible ("we have detections
+across these tactics, and a clear gap here") rather than an unstructured pile of ad hoc
+rules with no sense of overall coverage.
+
+15.4 Alert Quality and Triage
+
+Alert fatigue is a genuine architectural failure mode, not just an operational
+annoyance — a SOC drowning in low-confidence alerts will, predictably and
+rationally, start deprioritizing or dismissing alerts, including the real ones. Invest
+deliberately in reducing false-positive rate over adding rule coverage once a baseline
+of coverage exists; a smaller number of high-confidence, well-tuned detections that get
+taken seriously every time beats a large number of noisy ones that get ignored. Track
+and review this metric explicitly (alert volume, false-positive rate, mean time to
+triage) as a standing operational health indicator, not just after a near-miss forces
+the conversation.
+
+15.5 Threat Intelligence Integration
+
+Feed relevant threat intelligence (IOCs, TTPs relevant to the organization's industry
+and threat actor exposure) into detection logic, but calibrate the source quality —
+low-quality or overly generic threat feeds can meaningfully worsen the false-positive
+problem in 15.4 rather than improve detection. Prioritize intelligence specific to the
+organization's actual tech stack, industry, and realistic threat actors over generic
+broad feeds.
+
+
+SECTION 16: VULNERABILITY MANAGEMENT
+============================================================
+
+16.1 Program Structure
+
+Vulnerability management is a continuous program, not a periodic scan-and-forget
+activity. The core loop: discover (scanning, SCA, pen testing, bug bounty, threat
+intel), triage and prioritize, remediate or accept risk with an owner, and verify the
+fix actually closed the gap. Each stage needs explicit ownership and SLAs, or
+vulnerabilities accumulate silently — a scan that finds issues but has no enforced
+triage/remediation process attached to it produces a large backlog that erodes
+confidence in the whole program over time.
+
+16.2 Prioritization Beyond Raw CVSS
+
+CVSS base score alone is a poor sole prioritization signal — it doesn't account for
+whether the vulnerable component is actually reachable/exploitable in this specific
+deployment, whether it's internet-facing, or whether it processes sensitive data.
+Layer in: exploitability in this environment (is the vulnerable code path actually
+reachable, or dead/unused), exposure (internet-facing beats internal-only, all else
+equal), data sensitivity of the affected system, and — where available — real-world
+exploitation signal (EPSS scoring, or direct threat intelligence that a CVE is being
+actively exploited in the wild) which is often a better predictor of near-term risk
+than CVSS severity alone. A medium-CVSS vulnerability under active exploitation in the
+wild against internet-facing infrastructure processing customer data should be
+remediated well ahead of a critical-CVSS finding in an internal, non-reachable, low-
+sensitivity component.
+
+16.3 Remediation SLAs
+
+Define SLAs by severity and exposure, calibrated to be realistic enough that they're
+actually met (an SLA that's routinely missed stops functioning as a real deadline and
+becomes background noise) — a common, workable baseline: critical/actively-exploited
+findings on internet-facing systems remediated in days, not weeks; high-severity
+findings within 1-4 weeks; medium within a quarter; low tracked but not individually
+SLA'd unless it compounds with something else. Track SLA compliance as a program health
+metric and escalate systemic misses (not individual late tickets, but a pattern
+indicating the remediation process itself is under-resourced or the SLAs are
+miscalibrated).
+
+16.4 Risk Acceptance
+
+Not every vulnerability gets fixed immediately, and pretending otherwise produces a
+program that either lies about its status or burns disproportionate engineering time on
+low-value fixes. A legitimate risk acceptance requires: a named, accountable
+risk owner (not "the team," a specific person with the authority to accept the risk),
+an explicit expiry/review date (risk acceptance should not be permanent by default —
+circumstances change), and compensating controls documented if any exist (e.g., "this
+vulnerable component isn't patched yet, but it's network-isolated and monitored," which
+is a materially different risk posture than "unpatched and untouched").
+
+16.5 Penetration Testing and Red Teaming
+
+Scanning finds known vulnerability patterns; it does not find novel business-logic
+flaws or chained attack paths that individually-benign findings combine into. Periodic
+penetration testing (external firm for independence and fresh perspective, at minimum
+annually for anything handling regulated or high-sensitivity data, more often after
+major architecture changes) and, for more mature programs, red team exercises that
+test detection and response capability end-to-end (not just "can they get in" but "does
+the SOC notice, and how fast, and does incident response actually work under
+pressure") provide a different and complementary signal to continuous scanning.
+
+16.6 Bug Bounty and Responsible Disclosure
+
+A structured vulnerability disclosure program (even a simple security.txt and a
+monitored inbox, scaling up to a managed bug bounty platform as the organization
+matures) gives external researchers a legitimate path to report issues rather than
+either going public immediately or not reporting at all. This is both a genuine
+detection channel (external researchers regularly find things internal programs miss,
+simply through sheer numbers and diversity of approach) and a reputational
+signal — a mature, responsive disclosure program is itself evidence of security
+maturity to customers and partners evaluating the organization.
+
+
+SECTION 17: INCIDENT RESPONSE
+============================================================
+
+17.1 Preparation Is the Architecture Question
+
+Incident response effectiveness is determined far more by what's built before an
+incident than by decisions made during one. The architect's contribution to IR is
+ensuring the prerequisites exist: comprehensive, centralized, tamper-evident logging
+(Section 15.2) with retention sufficient to reconstruct an incident timeline; the
+ability to rapidly isolate a compromised system (network segmentation that actually
+allows fast isolation, not a flat network where "isolating" one host means also
+disrupting a dozen unrelated services); pre-established communication channels and
+decision authority (who can make the call to take a system offline, who talks to
+customers/regulators, who talks to press) defined before the pressure of an actual
+incident, not improvised during one; and tested backup/recovery capability, because
+ransomware and destructive-attack response frequently hinges entirely on whether clean,
+isolated, recent backups actually exist and actually restore — an untested backup is a
+hope, not a control.
+
+17.2 Incident Response Lifecycle
+
+Preparation — the above, plus a documented, accessible (including if primary systems
+are down — an incident response plan that only exists in the system that's currently
+compromised is a real and recurring failure mode) incident response plan with defined
+roles.
+
+Detection and analysis — confirming an actual incident (versus a false positive),
+scoping initial severity and blast radius, and beginning the timeline reconstruction
+that will inform every subsequent decision.
+
+Containment — short-term containment to stop active damage (isolate affected systems,
+revoke compromised credentials, block malicious infrastructure) followed by
+longer-term containment that allows continued operation while a full fix is prepared
+(e.g., a temporary compensating control while the actual vulnerability is patched).
+
+Eradication — removing the attacker's foothold entirely, not just the initially
+discovered piece of it. This is where architectural thoroughness matters most:
+assume the attacker established more than one persistence mechanism, and eradication
+isn't complete until the full scope of compromise (every touched system, every
+credential that could have been exposed, every persistence mechanism) is understood
+and addressed — declaring victory after removing the first discovered artifact is a
+common, costly mistake that leads to reinfection.
+
+Recovery — restoring systems to normal operation with validated integrity (from clean
+backups or rebuilt from known-good sources, not by simply "cleaning" a system that was
+compromised, which can't be done with full confidence), with heightened monitoring
+during the recovery window to catch any missed persistence.
+
+Post-incident review — a blameless retrospective focused on what the architecture and
+process allowed to happen and what changes prevent recurrence, feeding directly back
+into the threat model, SDLC controls, and detection logic (closing the loop referenced
+in Sections 6.2 and 15.3). The output should be concrete, owned action items with
+dates, not just a narrative document that gets filed away.
+
+17.3 Forensic Readiness
+
+Design systems assuming they may need to support a forensic investigation: logs that
+are tamper-evident (write-once or shipped immediately to a separate system the primary
+workload can't modify, so a compromised host can't erase its own evidence), sufficient
+detail to reconstruct "who did what, when, from where" without needing to guess, and
+clear chain-of-custody practices for anything that might end up supporting legal or
+regulatory action. Retrofitting forensic readiness after an incident is already
+underway is far less effective than architecting for it up front.
+
+17.4 Communication During an Incident
+
+Internal communication needs a channel that's assumed-uncompromised (not the primary
+corporate chat system, if that system's infrastructure might itself be part of the
+compromised environment) and a clear, rehearsed escalation path so the right people
+(legal, executive, potentially regulators/customers depending on severity and
+applicable law) are looped in at the right time — notification timelines for regulated
+data breaches are often legally mandated (this varies by jurisdiction and data type) and
+missing them compounds a technical incident into a compliance and legal one.
+
+17.5 Tabletop Exercises
+
+Run incident response tabletop exercises on a regular cadence (at least annually,
+ideally more often for the highest-risk scenarios) covering realistic scenarios specific
+to the organization's actual architecture and threat model — a ransomware scenario, a
+credential-stuffing-turned-account-takeover scenario, a third-party/supply-chain
+compromise scenario, and — increasingly relevant — an AI agent behaving unexpectedly or
+being manipulated into taking a harmful action. Tabletops surface gaps in the plan
+(unclear ownership, missing runbooks, tooling that doesn't actually work the way people
+assumed) far more cheaply than discovering those gaps during a real incident.
+
+
+SECTION 18: SUPPLY CHAIN SECURITY AND SBOM
+============================================================
+
+18.1 Why This Category Has Grown in Priority
+
+Modern software is assembled, not written from scratch — the overwhelming majority of a
+typical application's code, by volume, is third-party dependencies. This means the
+organization's actual attack surface extends deep into code it didn't write and often
+doesn't closely review, and the industry has seen a sustained rise in attacks that
+target this indirect path deliberately (compromising a widely-used package rather than
+attacking a target directly) because it's a far more efficient attacker strategy —
+compromise one popular dependency, gain access to every downstream consumer.
+
+18.2 Software Bill of Materials (SBOM)
+
+Generate an SBOM (in a standard format — SPDX or CycloneDX) as a build artifact for
+every release, not as a one-time exercise. An SBOM that isn't regenerated with every
+build drifts out of accuracy immediately and becomes actively misleading. The real
+value of an SBOM is realized in the response process: when a new critical
+vulnerability is disclosed in a widely-used library, the organization needs to answer
+"are we affected, and where" in minutes to hours, not days of manual codebase archaeology
+— this requires the SBOM to actually be queried automatically against new CVE feeds, not
+just filed away for audit purposes.
+
+18.3 Dependency Vetting
+
+Beyond known-CVE scanning (which only catches already-disclosed issues), evaluate new
+dependencies before adoption on: maintenance activity (is it actively maintained, or
+effectively abandoned — an abandoned dependency accumulates unpatched risk silently),
+maintainer trustworthiness signals (single-maintainer packages with broad reach are a
+recognized higher-risk pattern, given several real-world incidents of maintainer account
+compromise or a maintainer being socially engineered into handing off a popular package
+to a malicious new maintainer), and the actual footprint needed (does this dependency
+need the breadth of permissions/access it's requesting, e.g., does a formatting library
+really need network or filesystem access — supply-chain-aware package ecosystems
+increasingly surface this kind of information, and it's worth checking for
+security-sensitive dependencies).
+
+18.4 Build Pipeline Integrity
+
+Protect the build pipeline itself as a high-value target — a compromised CI/CD system
+can inject malicious code into every artifact it produces, downstream of and invisible
+to normal source-code review. Apply the SLSA framework's principles as a practical
+maturity ladder: build provenance is generated and available (what commit, what build
+system, what inputs produced this artifact), the build process is isolated and
+non-tamperable by the code being built (a build script shouldn't be able to modify its
+own build pipeline's trusted configuration), and artifacts are cryptographically
+signed so downstream consumers (including the organization's own deployment tooling)
+can verify integrity and provenance before running anything. Aim to reach the level of
+this maturity ladder proportional to the sensitivity of what's being built —
+crown-jewel production systems warrant the top of the ladder; a low-risk internal tool
+does not need the same investment.
+
+18.5 Third-Party and Vendor Risk
+
+Extend supply chain thinking beyond code dependencies to service providers and vendors
+with access to systems or data — the same "what's the blast radius if this trusted
+party is compromised" question applies to a SaaS vendor with API access to customer
+data as it does to an open-source library. Maintain an inventory of what third parties
+have access to what, require security attestations (SOC 2 reports, security
+questionnaires) proportional to the sensitivity of the access granted, and apply least
+privilege to vendor integrations the same way it's applied internally — a vendor
+integration requesting broader API scope than it actually uses is a real, common, and
+often overlooked risk.
+
+18.6 Model and AI-Specific Supply Chain (DUKE Relevance)
+
+Extend the same discipline to models, embeddings, fine-tunes, and training/RAG data
+sources used across the DUKE platform (see also Section 2.5). Track provenance the same
+way as a code dependency: where a model came from, what evaluation was done before
+adopting it into a production path, how updates are handled, and what the rollback plan
+is if a model is later found to have been poisoned, to have a licensing problem, or to
+simply regress in a way that has security implications (e.g., a model update that
+becomes more susceptible to a known injection pattern). This is a newer discipline than
+traditional SCA and tooling here is less mature industry-wide — until better automated
+tooling matures, this warrants deliberate manual process rather than assuming it's
+covered by existing SCA tooling, which largely doesn't yet understand this asset class.
+
+
+SECTION 19: COMPLIANCE — ISO 27001, SOC 2, NIST, CIS, OWASP
+============================================================
+
+19.1 Compliance as a By-Product of Good Architecture
+
+The right mental model: build the architecture and operational discipline described
+throughout this document, and compliance frameworks become largely a documentation and
+evidence-collection exercise layered on top of controls that already exist for good
+engineering reasons — not a separate parallel set of controls built purely to satisfy an
+auditor. Organizations that invert this (building controls reactively, specifically to
+pass an audit, disconnected from actual risk) end up with security theater that
+technically satisfies a checklist while leaving real gaps, and that pattern tends to
+surface expensively during an actual incident.
+
+19.2 ISO/IEC 27001
+
+An information security management system (ISMS) standard — the emphasis is on
+process: risk assessment methodology, a defined set of controls (Annex A, aligned in
+recent revisions with ISO 27002's updated control set covering themes like
+organizational, people, physical, and technological controls), and continuous
+improvement (plan-do-check-act) rather than a fixed technical checklist. Its main value
+is forcing a systematic, repeatable risk management process rather than ad hoc security
+decisions — the specific controls matter less than the discipline of the process
+producing and reviewing them. Relevant globally and often specifically valued by
+enterprise customers and partners outside North America.
+
+19.3 SOC 2
+
+An attestation (via an independent auditor, producing a Type I point-in-time or Type II
+over-a-period report) against the AICPA Trust Services Criteria — security
+(mandatory/common criteria), and optionally availability, processing integrity,
+confidentiality, and privacy. SOC 2 Type II is frequently the de facto minimum bar
+expected by enterprise B2B customers, especially SaaS customers, in evaluating a
+vendor's security posture before signing — expect it to gate deals with larger
+enterprise customers, and plan the observation period (typically 3-12 months for a
+Type II report) into any go-to-market timeline that depends on landing enterprise
+accounts, since it can't be compressed after the fact.
+
+19.4 NIST Frameworks
+
+NIST Cybersecurity Framework (CSF) — organizes a security program around Govern,
+Identify, Protect, Detect, Respond, Recover functions. Useful as a high-level program
+structure and communication tool with leadership/board audiences, less prescriptive
+than ISO 27001 or specific control catalogs.
+
+NIST SP 800-53 — a detailed control catalog, primarily mandatory for US federal systems
+and increasingly used as a reference baseline more broadly given its depth and
+free availability.
+
+NIST SP 800-207 — the Zero Trust Architecture reference (Section 3).
+
+NIST SP 800-63B — digital identity guidelines, particularly influential for current
+password/authentication best practice (the shift away from mandatory complexity rules
+and periodic rotation referenced in Section 4.2 traces directly to this document).
+
+19.5 CIS Controls and Benchmarks
+
+CIS Critical Security Controls — a prioritized, practically-oriented set of safeguards
+(organized into implementation groups by organizational maturity/resource level), useful
+as a pragmatic starting checklist, particularly for organizations building a program
+from a lower maturity baseline where ISO 27001's full process overhead isn't yet
+warranted. CIS Benchmarks — specific, detailed hardening configuration guides per
+technology (cloud providers, Kubernetes, operating systems, databases) — the standard
+reference baseline for configuration scanning tooling (Section 11.2, 12.1).
+
+19.6 OWASP
+
+Not a compliance framework in the certification sense, but the standard reference for
+application and API-level vulnerability classes and testing methodology: OWASP Top 10
+(web application), OWASP API Security Top 10 (Section 13.1), OWASP ASVS (Application
+Security Verification Standard — a much more detailed, testable set of requirements
+useful for defining what "secure" actually means at a granular level for a specific
+application, at a chosen verification level proportional to risk), and — increasingly
+relevant to DUKE's own domain — the OWASP Top 10 for LLM Applications, covering the
+prompt injection, excessive agency, and supply chain risks discussed in Section 2.5 from
+an industry-standard reference angle.
+
+19.7 Practical Multi-Framework Strategy
+
+Most organizations end up needing to satisfy more than one framework simultaneously
+(e.g., SOC 2 for US enterprise sales, ISO 27001 for international deals, sector-specific
+requirements layered on top). Rather than building separate control sets per framework,
+build a single internal control set mapped to all relevant frameworks' requirements —
+most frameworks' underlying controls overlap heavily (strong access control, encryption,
+logging, incident response, vendor risk management appear in nearly all of them), and a
+unified control set with a mapping table to each framework's specific language avoids
+duplicated, drifting implementations of what is substantively the same control.
+
+
+SECTION 20: PERFORMANCE, SCALABILITY, AND RELIABILITY AS SECURITY CONCERNS
+============================================================
+
+20.1 Availability Is a Security Property
+
+Confidentiality and integrity get most of the attention, but availability is one of the
+three classic pillars for a reason — a system that's secure against data theft but
+falls over under a DDoS attack, or under legitimate but unexpected load, has still
+failed its security mission for anyone depending on it. Architect for graceful
+degradation under attack or overload (shed non-critical load first, protect core
+functionality) rather than all-or-nothing failure.
+
+20.2 The Performance Cost of Security Controls
+
+Every security control has a latency or throughput cost — encryption, additional
+authorization checks, WAF inspection, logging — and pretending otherwise leads to
+controls being silently disabled under load pressure later, which is worse than
+designing for the cost up front. Benchmark security-critical paths (auth, encryption)
+specifically, not just assume the overall system benchmark captures them, since these
+paths are disproportionately likely to be on latency-sensitive hot paths (every request
+touches auth) while being disproportionately easy to overlook in general performance
+testing (they don't dominate CPU profiles the way a slow business-logic query might,
+but they dominate tail latency and are on the critical path for literally everything).
+
+20.3 Rate Limiting and Abuse Resistance at Scale
+
+Rate limiting needs to scale with the system without becoming either a bottleneck
+itself (a centralized rate limiter that becomes the new single point of failure/latency
+under load defeats its own purpose) or so distributed that it's trivially bypassed
+(per-node rate limits that don't share state can be bypassed by spreading requests
+across nodes). Use a shared, low-latency store (Redis or similar) for rate limit state
+in most architectures, with careful attention to what happens if that store itself
+becomes unavailable — fail open (allow traffic through, prioritizing availability) or
+fail closed (block traffic, prioritizing protection) is a real design decision that
+should be made deliberately per use case, not defaulted to accidentally by whatever the
+library does out of the box.
+
+20.4 Secure Systems Must Also Be Resilient Systems
+
+Chaos engineering and resilience testing have a security dimension: does the system
+maintain its security invariants under partial failure (e.g., if the authorization
+service is slow or partially down, does the system fail closed on access decisions, or
+does a timeout accidentally become an implicit allow)? This intersection — reliability
+engineering practices applied specifically to security-critical paths — is an
+underexplored but high-value area; explicitly include security invariant checks in
+resilience/chaos testing scenarios, not just uptime and data-consistency checks.
+
+20.5 Scalability of Security Operations Themselves
+
+As an organization and its systems grow, security operations (log volume, alert volume,
+number of services requiring review, number of dependencies requiring tracking) tend to
+scale faster than headcount. This is precisely where automation (Section 21) stops being
+a nice-to-have efficiency measure and becomes the only way the program remains
+functional — a security review process, detection pipeline, or vulnerability management
+program that only works via manual human effort at the current scale will simply stop
+working, not gracefully degrade, once volume outpaces the team's capacity to keep up
+manually.
+
+
+SECTION 21: MODERN TOOLING, AUTOMATION, AND AI-ASSISTED WORKFLOWS
+============================================================
+
+21.1 Automation Priorities
+
+Automate the high-volume, low-judgment work first, freeing human review time for the
+work that actually requires judgment: dependency and container scanning, secret
+scanning, configuration drift detection (CSPM, Section 11.2), routine access reviews
+(flagging unused permissions/stale accounts for human decision rather than manually
+auditing every account from scratch), and evidence collection for compliance
+(continuous control monitoring platforms that keep audit evidence current automatically
+rather than a frantic manual evidence-gathering exercise once a year before an audit).
+
+21.2 Policy as Code
+
+Express security and compliance policy as code wherever feasible (OPA/Rego, Cedar, or
+cloud-native policy languages) rather than as documents that humans are expected to
+manually apply consistently. Policy as code is version-controlled, testable, and
+enforceable at the point of action (admission control, CI gates, IAM policy evaluation)
+— this closes the gap between "the policy says X" and "the system actually enforces X,"
+which is where a large fraction of compliance and security gaps between paper and
+reality tend to live.
+
+21.3 AI-Assisted Security Workflows
+
+Generative AI and LLM-based tooling have become genuinely useful across several parts of
+the security workflow, with real caveats:
+
+Triage assistance — using an LLM to help summarize and prioritize large volumes of
+scanner findings, draft initial incident timelines from log data, or explain a complex
+vulnerability in plain language for a non-specialist stakeholder is a strong, mature use
+case that meaningfully reduces analyst toil. Treat the output as a well-informed first
+draft requiring human validation before action, not an autonomous decision-maker for
+anything consequential — hallucination risk and the difficulty of fully verifying an
+LLM's reasoning on a novel finding both argue for a human in the loop at the decision
+point, even as the drafting/summarization work itself is safely automatable.
+
+Code review assistance — LLM-assisted security code review can meaningfully augment
+(not replace) human review, particularly for catching common vulnerability patterns at
+scale and for a first pass on large PRs, but has real known blind spots for
+business-logic authorization flaws (Section 7.3) and novel architectural issues that
+require understanding intent, not just pattern-matching against known-bad code shapes.
+
+Detection engineering — LLMs assisting in drafting and iterating on detection rules,
+correlating disparate log sources into a coherent narrative, and generating hypotheses
+during threat hunting are increasingly standard practice and reduce the specialized
+query-language expertise bar for a broader set of analysts to contribute effectively.
+
+Red team and adversarial testing — LLM-assisted attack surface enumeration, phishing
+simulation content generation, and fuzzing/test-case generation are mature, valuable
+applications. Note the flip side explicitly: the same capability that helps a red team
+also lowers the skill floor for real attackers (more convincing phishing content,
+faster vulnerability discovery against public-facing targets) — this should inform how
+aggressively the organization invests in the corresponding defenses (Section 2.5's
+injection and agent-abuse coverage, phishing-resistant MFA per Section 4.2) rather than
+being treated as a reason to be pessimistic about defensive AI adoption.
+
+21.4 Governing AI Tool Usage Internally
+
+As engineering and security teams adopt AI coding assistants and agentic tooling
+broadly, apply the same architectural discipline this document recommends for DUKE's
+own agent platform (Section 2.5) to internally-used AI tooling: scope what
+repositories/systems an AI coding assistant can access, be deliberate about what
+proprietary or sensitive code and data get exposed to third-party AI tooling and
+under what data-handling terms, and review AI-generated code with the same (or greater)
+rigor as human-written code — AI-generated code has been repeatedly shown to reproduce
+known vulnerable patterns, hallucinate non-existent (and sometimes squatted/malicious)
+package dependencies, and occasionally produce subtly incorrect security-critical logic
+that looks plausible on a surface read. "An AI wrote it" is not a basis for reduced
+scrutiny; if anything, code from a source without accountable judgment about the
+specific system's context warrants the review checklist in Section 14.2 applied
+carefully rather than skipped.
+
+
+SECTION 22: REFERENCE ARCHITECTURE — PUTTING IT TOGETHER
+============================================================
+
+22.1 A Baseline Secure SaaS Reference Architecture
+
+For a typical multi-tenant SaaS system (broadly applicable across DUKE Global's own
+products), a reasonable default architecture synthesizing the above sections:
+
+Edge: CDN/WAF absorbing volumetric and common web attacks, TLS 1.3 terminated at the
+edge, DDoS protection layered ahead of origin infrastructure.
+
+Identity: centralized IdP handling authentication for both customers and internal staff,
+OIDC for the application's own auth flows, SAML support for enterprise SSO customers,
+MFA enforced (phishing-resistant for staff/admin, standard MFA at minimum for customers),
+short-lived JWTs for session tokens with rotated refresh tokens.
+
+API layer: gateway enforcing schema validation, per-identity rate limiting, and
+authentication verification; backend services independently re-verifying authorization
+per request (defense in depth against a gateway bypass); all internal service-to-service
+traffic over mTLS via a service mesh or equivalent workload identity mechanism.
+
+Data layer: tenant isolation enforced structurally (row-level security or siloing per
+the sensitivity tier, Section 11.3), encryption at rest with envelope encryption for the
+most sensitive data classes, database credentials issued dynamically and short-lived
+from the secrets manager rather than static.
+
+Compute: Kubernetes (or equivalent) with Pod Security Standards enforced via admission
+control, workload identity federation for cloud API access (no long-lived credentials
+in pods), default-deny NetworkPolicies, images scanned and signed before deployment.
+
+Secrets: centralized secrets manager, dynamic/short-lived secrets preferred, all access
+logged and attributable, zero secrets in source control or CI config.
+
+Observability: centralized SIEM ingesting application, infrastructure, identity, and
+network logs; detection rules mapped to MITRE ATT&CK with an explicit coverage view;
+tamper-evident log shipping so a compromised workload can't erase its own trail.
+
+CI/CD: SAST, SCA, secret scanning, and IaC scanning on every PR; SBOM generated and
+diffed against new CVE feeds automatically; build provenance and artifact signing;
+deployment gated on a defined, risk-based severity threshold rather than zero-findings.
+
+Agent/AI layer (DUKE-specific): every agent has a distinct, individually auditable
+identity; tool grants scoped per-agent to the minimum needed with irreversible actions
+gated on human confirmation; clear architectural separation between trusted instructions
+and untrusted data at every point an agent ingests external content; agent-to-agent
+calls treated with the same input-handling rigor as external-perimeter calls; persistent
+agent memory writes treated as a privileged, auditable operation.
+
+22.2 Using This Reference
+
+No system should adopt every element of this reference architecture uniformly — apply
+the risk-proportionate judgment from Section 1.4 to decide which elements are load-
+bearing for a given system's actual sensitivity and threat exposure, and which can be
+simplified for a lower-risk internal tool. The reference exists to be the default
+starting point that requires an explicit, reasoned deviation to move away from — not a
+mandatory checklist applied identically regardless of context. A low-sensitivity
+internal admin tool with no customer data does not need the full weight of tenant
+isolation architecture; a system touching payment data or customer PII should rarely,
+if ever, simplify below this baseline without a very clearly documented and explicitly
+accepted reason.
+
+22.3 Closing Principle
+
+The role of this agent, and of security architecture generally, is not to make systems
+theoretically unbreakable — no system is. It is to make the cost of compromise
+disproportionate to the value an attacker gains, to make failures contained and
+survivable rather than catastrophic, to make the organization's actual risk visible and
+consciously chosen rather than accidental, and to make the secure path the path of
+least resistance for the engineers building on top of this architecture every day. Judge
+every recommendation in this document against that standard, applied to the specific
+system in front of you — not against an abstract notion of maximum security divorced
+from the cost, timeline, and actual threat model that system faces.

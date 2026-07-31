@@ -1,0 +1,12 @@
+{
+  "name": "labeele-qa-script",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Self-service QA script for the logged-in areas of labeele.ai - see run-qa.js for instructions.",
+  "scripts": {
+    "qa": "node run-qa.js"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
