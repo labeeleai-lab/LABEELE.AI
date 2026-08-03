@@ -1,0 +1,7 @@
+# Large raw benchmark datasets kept local-only (training/eval source data) -
+# reproducible from public sources (GLUE/SuperGLUE), not meant to live in
+# git history. Scoped narrowly so future per-agent knowledge files aren't
+# accidentally excluded.
+knowledge-base/DUKE_Global/GLUE.zip
+knowledge-base/DUKE_Global/SUPERGLUE.zip
+knowledge-base/DUKE_Global/raw/
