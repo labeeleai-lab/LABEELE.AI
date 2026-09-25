@@ -91,14 +91,18 @@ def _account_out(account: Account) -> dict:
 
 
 def get_current_account(
-    authorization: Optional[str] = Header(default=None),
+    x_session_token: Optional[str] = Header(default=None),
     db: Session = Depends(get_accounts_db),
 ) -> Account:
-    if not authorization or not authorization.lower().startswith("bearer "):
+    # Deliberately its own header, not Authorization - the Space is private
+    # on Hugging Face, and HF's own platform-level gate already uses
+    # "Authorization: Bearer <hf-token>" on every request that reaches this
+    # container at all. Reusing that same header for our own session token
+    # would collide with it.
+    if not x_session_token:
         raise HTTPException(status_code=401, detail="Not signed in.")
 
-    token = authorization.split(" ", 1)[1].strip()
-    payload = verify_account_token(token)
+    payload = verify_account_token(x_session_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Session expired or invalid.")
 

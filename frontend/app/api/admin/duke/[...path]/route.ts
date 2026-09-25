@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/admin'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 
 // Server-only proxy for admin-only Duke backend calls (training controls,
 // persona CRUD, annotation feedback, stats, training-data upload, knowledge
@@ -21,7 +21,7 @@ async function proxy(req: NextRequest, path: string[], method: string) {
     return NextResponse.json({ error: 'DUKE_ADMIN_SECRET is not configured on the server.' }, { status: 500 })
   }
 
-  const targetUrl = `${DUKE_API_URL}/${path.join('/')}${req.nextUrl.search}`
+  const targetPath = `/${path.join('/')}${req.nextUrl.search}`
 
   const init: RequestInit = {
     method,
@@ -45,7 +45,7 @@ async function proxy(req: NextRequest, path: string[], method: string) {
   const timeout = isLogStream ? null : setTimeout(() => controller.abort(), 60_000)
 
   try {
-    const res = await fetch(targetUrl, { ...init, signal: controller.signal })
+    const res = await dukeFetch(targetPath, { ...init, signal: controller.signal })
 
     if (isLogStream || res.headers.get('content-type')?.includes('text/event-stream')) {
       return new NextResponse(res.body, {

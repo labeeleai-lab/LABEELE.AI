@@ -259,7 +259,10 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 10_0
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const res = await fetch(`${DUKE_API_URL}${path}`, {
+    // Same-origin proxy (app/api/duke/[...path]/route.ts) - the Duke Space is
+    // private, so the browser can no longer call it directly; the proxy
+    // attaches the required Bearer token server-side.
+    const res = await fetch(`/api/duke${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init.headers },
       signal: controller.signal,

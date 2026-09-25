@@ -1,21 +1,21 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 import { SESSION_COOKIE } from '@/lib/session'
 
 // Deletes the CALLING user's own account. The account id always comes from
 // their own verified session token (the backend re-derives it from the
-// Bearer token) - never from the request body - so this can't be used to
-// delete an arbitrary account.
+// X-Session-Token header) - never from the request body - so this can't be
+// used to delete an arbitrary account.
 export async function POST() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value
   if (!token) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   }
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/me`, {
+  const res = await dukeFetch('/api/accounts/me', {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { 'X-Session-Token': token },
   }).catch(() => null)
 
   if (!res) {

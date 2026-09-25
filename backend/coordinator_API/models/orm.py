@@ -184,4 +184,13 @@ class KnowledgeChunk(Base):
         ),
     )
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    # Don't let an unreachable DATABASE_URL crash the entire app at import
+    # time - every route that actually needs this database (knowledge/RAG,
+    # agents, tasks, training data) will still fail per-request until it's
+    # reachable again, but everything else (accounts, contact form, health)
+    # keeps working instead of the whole process refusing to start.
+    import logging
+    logging.getLogger(__name__).error(f"models/orm.py: Base.metadata.create_all() failed - DATABASE_URL may be unreachable: {e}")

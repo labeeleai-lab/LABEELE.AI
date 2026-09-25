@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/admin'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 
 const ADMIN_SECRET = process.env.DUKE_ADMIN_SECRET
 
@@ -14,7 +14,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/contact-messages/${encodeURIComponent(id)}/read`, {
+  const res = await dukeFetch(`/api/accounts/admin/contact-messages/${encodeURIComponent(id)}/read`, {
     method: 'POST',
     headers: { 'X-Admin-Secret': ADMIN_SECRET },
   }).catch(() => null)

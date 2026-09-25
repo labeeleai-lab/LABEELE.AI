@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/admin'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 
 const ADMIN_SECRET = process.env.DUKE_ADMIN_SECRET
 
@@ -12,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ error: 'DUKE_ADMIN_SECRET is not configured on the server.' }, { status: 500 })
   }
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/users`, {
+  const res = await dukeFetch('/api/accounts/admin/users', {
     headers: { 'X-Admin-Secret': ADMIN_SECRET },
   }).catch(() => null)
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 422 })
   }
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/users`, {
+  const res = await dukeFetch('/api/accounts/admin/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': ADMIN_SECRET },
     body: JSON.stringify({ email }),

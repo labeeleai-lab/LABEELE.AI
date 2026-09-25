@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 import { SESSION_COOKIE } from '@/lib/session'
 
 // Thin proxy to the backend's own account system (see
@@ -9,7 +9,7 @@ import { SESSION_COOKIE } from '@/lib/session'
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/register`, {
+  const res = await dukeFetch('/api/accounts/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

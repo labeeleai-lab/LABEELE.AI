@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/admin'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 
 const ADMIN_SECRET = process.env.DUKE_ADMIN_SECRET
 
@@ -15,7 +15,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { email } = await params
   const targetEmail = decodeURIComponent(email).toLowerCase()
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/users/${encodeURIComponent(targetEmail)}`, {
+  const res = await dukeFetch(`/api/accounts/admin/users/${encodeURIComponent(targetEmail)}`, {
     method: 'DELETE',
     headers: { 'X-Admin-Secret': ADMIN_SECRET },
   }).catch(() => null)

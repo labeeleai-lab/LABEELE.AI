@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 import { SESSION_COOKIE } from '@/lib/session'
 
 // Dashboard "recent queries" - proxies to the backend with the caller's own
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const limit = searchParams.get('limit') ?? '20'
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/history?limit=${encodeURIComponent(limit)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await dukeFetch(`/api/accounts/history?limit=${encodeURIComponent(limit)}`, {
+    headers: { 'X-Session-Token': token },
   }).catch(() => null)
 
   if (!res || !res.ok) return NextResponse.json([], { status: 200 })
@@ -32,9 +32,9 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null)
 
-  const res = await fetch(`${DUKE_API_URL}/api/accounts/history`, {
+  const res = await dukeFetch('/api/accounts/history', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', 'X-Session-Token': token },
     body: JSON.stringify(body),
   }).catch(() => null)
 

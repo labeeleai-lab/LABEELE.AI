@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { DUKE_API_URL } from '@/lib/duke-api'
+import { dukeFetch } from '@/lib/duke-server'
 
 // Public - proxies the contact form to the backend's local SQLite-backed
 // contact_messages table (see backend/coordinator_API/routers/accounts.py).
@@ -7,7 +7,7 @@ import { DUKE_API_URL } from '@/lib/duke-api'
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
 
-  const res = await fetch(`${DUKE_API_URL}/api/contact`, {
+  const res = await dukeFetch('/api/contact', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
