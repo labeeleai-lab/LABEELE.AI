@@ -6,7 +6,6 @@ import AppShell from '../components/AppShell'
 import GlassCard from '../components/GlassCard'
 import StatusCard from '../components/StatusCard'
 import { dukeApi, DukeApiError, DUKE_API_URL, type HealthStatus, type ModelStatus, type LearningStatus } from '@/lib/duke-api'
-import { supabaseBrowser } from '@/lib/supabase/client'
 import { listRecentQueries, saveQuery, type AgentQuery } from '@/lib/query-history'
 
 // DUKE first and visually distinct - it's the central coordinator, not an eighth
@@ -49,7 +48,6 @@ function useBackendStatus() {
 export default function DashboardPage() {
   const { health, model, learning } = useBackendStatus()
 
-  const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [history, setHistory] = useState<AgentQuery[]>([])
 
@@ -59,18 +57,19 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refreshHistory = useCallback(async (uid: string) => {
-    setHistory(await listRecentQueries(uid))
+  const refreshHistory = useCallback(async () => {
+    setHistory(await listRecentQueries())
   }, [])
 
   useEffect(() => {
-    supabaseBrowser?.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setUserId(data.user.id)
-        setUserEmail(data.user.email ?? null)
-        refreshHistory(data.user.id)
-      }
-    })
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.user) {
+          setUserEmail(body.user.email)
+          refreshHistory()
+        }
+      })
   }, [refreshHistory])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,16 +84,16 @@ export default function DashboardPage() {
         description: query,
         complexity: 5,
         target_agent: selectedAgent,
-        buyer_id: userId ?? 'dashboard-user',
+        buyer_id: userEmail ?? 'dashboard-user',
       })
 
       const response = data.response || 'No response received'
       setResult(response)
       setQuery('')
 
-      if (userId) {
-        await saveQuery(userId, selectedAgent, query, response)
-        refreshHistory(userId)
+      if (userEmail) {
+        await saveQuery(selectedAgent, query, response)
+        refreshHistory()
       }
     } catch (err) {
       setError(err instanceof DukeApiError ? err.message : 'Query failed')

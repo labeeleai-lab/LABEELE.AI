@@ -13,12 +13,11 @@
   "dependencies": {
     "@hookform/resolvers": "^5.5.7",
     "@monaco-editor/react": "^4.7.0",
-    "@supabase/ssr": "^0.12.3",
-    "@supabase/supabase-js": "^2.110.8",
     "@tanstack/react-query": "^5.35.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.2",
+    "jose": "^6.2.12",
     "lucide-react": "^0.469.0",
     "next": "^14.2.16",
     "react": "^18.3.1",

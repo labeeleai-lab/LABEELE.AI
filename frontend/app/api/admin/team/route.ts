@@ -1,21 +1,26 @@
 import { NextResponse } from 'next/server'
-import { supabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase/admin'
 import { requireAdminUser } from '@/lib/admin'
+import { DUKE_API_URL } from '@/lib/duke-api'
+
+const ADMIN_SECRET = process.env.DUKE_ADMIN_SECRET
 
 export async function GET() {
   const guard = await requireAdminUser()
   if ('errorResponse' in guard) return guard.errorResponse
 
-  if (!isSupabaseAdminConfigured || !supabaseAdmin) {
-    return NextResponse.json({ error: 'Admin client is not configured.' }, { status: 500 })
+  if (!ADMIN_SECRET) {
+    return NextResponse.json({ error: 'DUKE_ADMIN_SECRET is not configured on the server.' }, { status: 500 })
   }
 
-  const { data, error: dbError } = await supabaseAdmin
-    .from('admin_users')
-    .select('email, added_by, created_at')
-    .order('created_at', { ascending: true })
+  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/users`, {
+    headers: { 'X-Admin-Secret': ADMIN_SECRET },
+  }).catch(() => null)
 
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
+  if (!res) return NextResponse.json({ error: 'Could not reach the backend.' }, { status: 502 })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) return NextResponse.json({ error: data.detail || 'Failed to load admins.' }, { status: res.status })
+
   return NextResponse.json({ admins: data })
 }
 
@@ -23,8 +28,8 @@ export async function POST(request: Request) {
   const guard = await requireAdminUser()
   if ('errorResponse' in guard) return guard.errorResponse
 
-  if (!isSupabaseAdminConfigured || !supabaseAdmin) {
-    return NextResponse.json({ error: 'Admin client is not configured.' }, { status: 500 })
+  if (!ADMIN_SECRET) {
+    return NextResponse.json({ error: 'DUKE_ADMIN_SECRET is not configured on the server.' }, { status: 500 })
   }
 
   const body = await request.json().catch(() => null)
@@ -34,15 +39,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 422 })
   }
 
-  const { error: insertError } = await supabaseAdmin
-    .from('admin_users')
-    .insert({ email, added_by: guard.user.email })
+  const res = await fetch(`${DUKE_API_URL}/api/accounts/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': ADMIN_SECRET },
+    body: JSON.stringify({ email }),
+  }).catch(() => null)
 
-  if (insertError) {
-    const status = insertError.code === '23505' ? 409 : 500
-    const message = insertError.code === '23505' ? 'That email is already an admin.' : insertError.message
-    return NextResponse.json({ error: message }, { status })
-  }
+  if (!res) return NextResponse.json({ error: 'Could not reach the backend.' }, { status: 502 })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) return NextResponse.json({ error: data.detail || 'Failed to add admin.' }, { status: res.status })
 
   return NextResponse.json({ success: true }, { status: 201 })
 }

@@ -2,13 +2,13 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, MailCheck } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import AuthShell from '../components/AuthShell'
 import PasswordInput from '../components/PasswordInput'
-import { supabaseBrowser, isSupabaseConfigured } from '@/lib/supabase/client'
 
 const signupSchema = z
   .object({
@@ -24,8 +24,8 @@ const signupSchema = z
 type SignupForm = z.infer<typeof signupSchema>
 
 export default function SignupPage() {
+  const router = useRouter()
   const [formError, setFormError] = useState<string | null>(null)
-  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
 
   const {
     register,
@@ -37,46 +37,21 @@ export default function SignupPage() {
   const onSubmit = async (values: SignupForm) => {
     setFormError(null)
 
-    if (!isSupabaseConfigured || !supabaseBrowser) {
-      setFormError('Sign-up isn’t configured yet. Add Supabase credentials to enable it.')
-      return
-    }
-
-    const { error } = await supabaseBrowser.auth.signUp({
-      email: values.email,
-      password: values.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-      },
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: values.email, password: values.password }),
     })
+    const body = await res.json().catch(() => ({}))
 
-    if (error) {
-      setFormError(error.message)
+    if (!res.ok) {
+      setFormError(body.error || 'Sign-up failed.')
       setFocus('email')
       return
     }
 
-    setSubmittedEmail(values.email)
-  }
-
-  if (submittedEmail) {
-    return (
-      <AuthShell title="Check your email" subtitle="One more step">
-        <div className="flex flex-col items-center text-center gap-4 py-4">
-          <MailCheck className="w-10 h-10 text-emerald-400" />
-          <p className="text-gray-300 text-sm">
-            We sent a verification link to <span className="text-white font-medium">{submittedEmail}</span>.
-            Click it to activate your account, then log in.
-          </p>
-          <Link
-            href="/login"
-            className="mt-2 inline-flex items-center justify-center px-6 py-2.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors"
-          >
-            Go to login
-          </Link>
-        </div>
-      </AuthShell>
-    )
+    router.push('/dashboard')
+    router.refresh()
   }
 
   return (

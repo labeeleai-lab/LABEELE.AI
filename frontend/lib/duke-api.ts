@@ -1,6 +1,7 @@
 // Typed client for the real Duke backend (backend/coordinator_api.py), deployed at
 // https://labeelea1-labeele-duke-prod.hf.space. Only wraps endpoints that don't require
-// the backend's own bespoke JWT auth (website auth is handled separately, by Supabase).
+// a signed-in session (website auth - login/signup/accounts - is handled separately,
+// via app/api/auth/* and backend/coordinator_API/routers/accounts.py).
 //
 // Replaces lib/api-client.ts, which pointed at endpoints (`/api/agents`, `/api/train/*`)
 // that don't exist on the real backend.

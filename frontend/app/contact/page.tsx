@@ -8,7 +8,6 @@ import { Loader2, CheckCircle2, Mail, Phone } from 'lucide-react'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 import GlassCard from '../components/GlassCard'
-import { supabaseBrowser, isSupabaseConfigured } from '@/lib/supabase/client'
 
 const contactSchema = z.object({
   name: z.string().min(1, 'Enter your name'),
@@ -31,19 +30,15 @@ export default function ContactPage() {
   const onSubmit = async (values: ContactForm) => {
     setSubmitError(null)
 
-    if (!isSupabaseConfigured || !supabaseBrowser) {
-      setSubmitError('not_configured')
-      return
-    }
-
-    const { error } = await supabaseBrowser.from('contact_messages').insert({
-      name: values.name,
-      email: values.email,
-      message: values.message,
+    const res = await fetch('/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values),
     })
 
-    if (error) {
-      setSubmitError(error.message)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setSubmitError(body.error || 'Something went wrong sending your message.')
       return
     }
 
@@ -140,19 +135,7 @@ export default function ContactPage() {
                   )}
                 </div>
 
-                {submitError === 'not_configured' && (
-                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-sm text-amber-200 flex items-start gap-2.5">
-                    <Mail className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>
-                      The contact form isn&apos;t connected yet &mdash; email us directly at{' '}
-                      <a href="mailto:labeeleai@gmail.com" className="underline">
-                        labeeleai@gmail.com
-                      </a>{' '}
-                      instead.
-                    </span>
-                  </div>
-                )}
-                {submitError && submitError !== 'not_configured' && (
+                {submitError && (
                   <div role="alert" className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
                     {submitError}
                   </div>

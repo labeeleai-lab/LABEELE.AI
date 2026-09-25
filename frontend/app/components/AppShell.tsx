@@ -5,7 +5,6 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, ShieldCheck } from 'lucide-react'
-import { supabaseBrowser } from '@/lib/supabase/client'
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -25,7 +24,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   const handleSignOut = async () => {
-    await supabaseBrowser?.auth.signOut()
+    await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/')
     router.refresh()
   }

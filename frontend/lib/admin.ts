@@ -1,47 +1,23 @@
 import 'server-only'
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import type { User } from '@supabase/supabase-js'
-import { supabaseAdmin, isSupabaseAdminConfigured } from './supabase/admin'
-import { createSupabaseServerClient } from './supabase/server'
+import { SESSION_COOKIE, verifySessionToken } from './session'
 
-// admin_users has no client-facing RLS policies on purpose - every check and
-// write goes through server code using the service-role client, never the
-// browser directly. Used in middleware.ts to gate /admin/*, and re-checked
-// independently inside every /api/admin/* route handler (those can trigger
-// retraining, delete training data, or push commits - middleware alone
-// isn't enough for actions that consequential).
-export async function isAdmin(email: string | null | undefined): Promise<boolean> {
-  if (!email || !isSupabaseAdminConfigured || !supabaseAdmin) return false
+// requireAdminUser() re-verifies the caller's own session cookie server-side
+// (never trusts middleware alone) before letting a request into any
+// /api/admin/* route handler - those can trigger retraining, delete data, or
+// push commits to GitHub. is_admin is baked into the session token itself
+// (see backend/coordinator_API/core/accounts_security.py), so this is a
+// local, no-network-call check.
+export async function requireAdminUser(): Promise<
+  { user: { email: string } } | { errorResponse: NextResponse }
+> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value
+  const session = await verifySessionToken(token)
 
-  const { data, error } = await supabaseAdmin
-    .from('admin_users')
-    .select('email')
-    .eq('email', email.toLowerCase())
-    .maybeSingle()
-
-  if (error) {
-    console.error('isAdmin check failed:', error.message)
-    return false
-  }
-  return Boolean(data)
-}
-
-// Shared guard for /api/admin/* route handlers - re-verifies the caller's own
-// session server-side rather than trusting middleware, since these routes can
-// trigger retraining, delete data, or push commits to GitHub.
-export async function requireAdminUser(): Promise<{ user: User } | { errorResponse: NextResponse }> {
-  const supabase = await createSupabaseServerClient()
-  if (!supabase) {
-    return { errorResponse: NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 }) }
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user?.email || !(await isAdmin(user.email))) {
+  if (!session || !session.is_admin) {
     return { errorResponse: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
 
-  return { user }
+  return { user: { email: session.email } }
 }

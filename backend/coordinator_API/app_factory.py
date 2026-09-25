@@ -22,7 +22,7 @@ from coordinator_API.core.config import ASSETS_DIR
 from coordinator_API.lifespan import lifespan
 from coordinator_API.routers import (
     health, agency_tools, admin_dashboard, admin_knowledge, admin_training,
-    admin_personas, iac, agents, auth, tasks,
+    admin_personas, iac, agents, auth, tasks, accounts,
 )
 
 
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(agents.router)
     app.include_router(auth.router)
     app.include_router(tasks.router)
+    app.include_router(accounts.router)
 
     _assert_no_duplicate_routes(app)
     return app

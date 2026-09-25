@@ -7,7 +7,7 @@ const PRACTICES = [
   {
     icon: KeyRound,
     title: 'Authentication',
-    description: 'Accounts and sessions are handled by Supabase Auth, with hashed credentials and email verification on signup.',
+    description: 'Accounts and sessions are handled by our own backend, with bcrypt-hashed credentials and signed session tokens.',
   },
   {
     icon: Lock,
@@ -22,7 +22,7 @@ const PRACTICES = [
   {
     icon: Server,
     title: 'Data storage',
-    description: 'Account and application data is stored with Supabase; query processing is handled by our dedicated backend service.',
+    description: 'Account and application data is stored on our own dedicated backend service, which also handles query processing.',
   },
 ]
 

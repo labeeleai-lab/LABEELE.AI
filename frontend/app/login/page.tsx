@@ -9,7 +9,6 @@ import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
 import AuthShell from '../components/AuthShell'
 import PasswordInput from '../components/PasswordInput'
-import { supabaseBrowser, isSupabaseConfigured } from '@/lib/supabase/client'
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email address'),
@@ -33,15 +32,15 @@ function LoginFormInner() {
   const onSubmit = async (values: LoginForm) => {
     setFormError(null)
 
-    if (!isSupabaseConfigured || !supabaseBrowser) {
-      setFormError('Sign-in isn’t configured yet. Add Supabase credentials to enable it.')
-      return
-    }
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values),
+    })
+    const body = await res.json().catch(() => ({}))
 
-    const { error } = await supabaseBrowser.auth.signInWithPassword(values)
-
-    if (error) {
-      setFormError(error.message)
+    if (!res.ok) {
+      setFormError(body.error || 'Invalid email or password.')
       setFocus('email')
       return
     }
@@ -93,9 +92,9 @@ function LoginFormInner() {
             <label htmlFor="password" className="block text-sm font-medium text-gray-300">
               Password
             </label>
-            <Link href="/forgot-password" className="text-xs text-gold-500 hover:text-gold-400">
+            <a href="mailto:labeeleai@gmail.com" className="text-xs text-gold-500 hover:text-gold-400">
               Forgot password?
-            </Link>
+            </a>
           </div>
           <PasswordInput id="password" autoComplete="current-password" {...register('password')} />
           {errors.password && (

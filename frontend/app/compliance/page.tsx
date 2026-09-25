@@ -19,8 +19,8 @@ export default function CompliancePage() {
                 <h3 className="font-semibold text-white mb-2">Today</h3>
                 <p className="text-gray-400 text-sm leading-relaxed">
                   We follow SOC 2-aligned practices in how we handle authentication, access
-                  control, and data storage (via Supabase), but we have not completed a formal SOC 2,
-                  ISO 27001, or HIPAA audit yet.
+                  control, and data storage on our own backend infrastructure, but we have not
+                  completed a formal SOC 2, ISO 27001, or HIPAA audit yet.
                 </p>
               </GlassCard>
               <GlassCard>

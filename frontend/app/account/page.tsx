@@ -9,7 +9,6 @@ import { Loader2, Check, Trash2 } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import GlassCard from '../components/GlassCard'
 import PasswordInput from '../components/PasswordInput'
-import { supabaseBrowser } from '@/lib/supabase/client'
 
 const profileSchema = z.object({
   fullName: z.string().max(100).optional(),
@@ -42,27 +41,38 @@ export default function AccountPage() {
   const passwordFormApi = useForm<PasswordForm>({ resolver: zodResolver(passwordSchema) })
 
   useEffect(() => {
-    supabaseBrowser?.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setEmail(data.user.email ?? null)
-        profileFormApi.reset({ fullName: (data.user.user_metadata?.full_name as string) ?? '' })
-      }
-    })
+    fetch('/api/auth/profile')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.email) {
+          setEmail(data.email)
+          profileFormApi.reset({ fullName: data.full_name ?? '' })
+        }
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const onSaveProfile = async (values: ProfileForm) => {
     setProfileSaved(false)
-    await supabaseBrowser?.auth.updateUser({ data: { full_name: values.fullName } })
+    await fetch('/api/auth/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: values.fullName }),
+    })
     setProfileSaved(true)
   }
 
   const onChangePassword = async (values: PasswordForm) => {
     setPasswordError(null)
     setPasswordSaved(false)
-    const { error } = await supabaseBrowser?.auth.updateUser({ password: values.password }) ?? {}
-    if (error) {
-      setPasswordError(error.message)
+    const res = await fetch('/api/auth/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: values.password }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setPasswordError(body.error || 'Failed to update password.')
       return
     }
     setPasswordSaved(true)

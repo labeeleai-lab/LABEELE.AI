@@ -4,7 +4,6 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, ArrowLeft } from 'lucide-react'
-import { supabaseBrowser } from '@/lib/supabase/client'
 
 const NAV_LINKS = [
   { href: '/admin', label: 'Overview' },
@@ -13,6 +12,7 @@ const NAV_LINKS = [
   { href: '/admin/knowledge', label: 'Knowledge' },
   { href: '/admin/annotate', label: 'Annotate' },
   { href: '/admin/code', label: 'Code' },
+  { href: '/admin/messages', label: 'Messages' },
   { href: '/admin/team', label: 'Team' },
 ]
 
@@ -21,7 +21,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const router = useRouter()
 
   const handleSignOut = async () => {
-    await supabaseBrowser?.auth.signOut()
+    await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/')
     router.refresh()
   }

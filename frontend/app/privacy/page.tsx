@@ -32,9 +32,9 @@ export default function PrivacyPage() {
               <div>
                 <h2 className="text-xl font-semibold text-white mb-3">3. Where your data is stored</h2>
                 <p>
-                  Account and application data is stored with Supabase, our authentication and
-                  database provider. Query content is also processed by our backend AI service to
-                  generate a response.
+                  Account and application data is stored on our own backend service, which also
+                  handles authentication. Query content is also processed by our backend AI service
+                  to generate a response.
                 </p>
               </div>
               <div>
