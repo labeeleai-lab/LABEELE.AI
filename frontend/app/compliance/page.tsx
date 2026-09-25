@@ -28,8 +28,8 @@ export default function CompliancePage() {
                 <p className="text-gray-400 text-sm leading-relaxed">
                   As we grow, we plan to pursue formal certifications relevant to our customers.
                   If your organization has specific compliance requirements, let us know at{' '}
-                  <a href="mailto:compliance@labeele.ai" className="text-gold-500 hover:text-gold-400">
-                    compliance@labeele.ai
+                  <a href="mailto:labeeleai@gmail.com" className="text-gold-500 hover:text-gold-400">
+                    labeeleai@gmail.com
                   </a>{' '}
                   and we&apos;ll tell you where we stand against them.
                 </p>

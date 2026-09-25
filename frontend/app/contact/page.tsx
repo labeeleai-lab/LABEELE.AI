@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, CheckCircle2, Mail } from 'lucide-react'
+import { Loader2, CheckCircle2, Mail, Phone } from 'lucide-react'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 import GlassCard from '../components/GlassCard'
@@ -56,10 +56,27 @@ export default function ContactPage() {
       <main className="bg-royal-blue-900 min-h-screen px-6 lg:px-8 py-24">
         <div className="max-w-xl mx-auto">
           <h1 className="text-3xl lg:text-4xl font-bold text-white mb-3">Contact us</h1>
-          <p className="text-gray-400 mb-10">
+          <p className="text-gray-400 mb-6">
             Questions about the product, pricing, or a custom plan &mdash; send us a message and we&apos;ll
             get back to you.
           </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 mb-10">
+            <a
+              href="mailto:labeeleai@gmail.com"
+              className="flex items-center gap-2 text-sm text-gray-300 hover:text-gold-500 transition-colors"
+            >
+              <Mail className="w-4 h-4 text-gold-500" />
+              labeeleai@gmail.com
+            </a>
+            <a
+              href="tel:+12149311968"
+              className="flex items-center gap-2 text-sm text-gray-300 hover:text-gold-500 transition-colors"
+            >
+              <Phone className="w-4 h-4 text-gold-500" />
+              (214) 931-1968
+            </a>
+          </div>
 
           <GlassCard>
             {submitted ? (
@@ -128,8 +145,8 @@ export default function ContactPage() {
                     <Mail className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>
                       The contact form isn&apos;t connected yet &mdash; email us directly at{' '}
-                      <a href="mailto:hello@labeele.ai" className="underline">
-                        hello@labeele.ai
+                      <a href="mailto:labeeleai@gmail.com" className="underline">
+                        labeeleai@gmail.com
                       </a>{' '}
                       instead.
                     </span>

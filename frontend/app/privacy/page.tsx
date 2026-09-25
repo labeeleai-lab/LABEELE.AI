@@ -49,8 +49,8 @@ export default function PrivacyPage() {
                 <h2 className="text-xl font-semibold text-white mb-3">5. Contact</h2>
                 <p>
                   Questions about this policy can be sent to{' '}
-                  <a href="mailto:privacy@labeele.ai" className="text-gold-500 hover:text-gold-400">
-                    privacy@labeele.ai
+                  <a href="mailto:labeeleai@gmail.com" className="text-gold-500 hover:text-gold-400">
+                    labeeleai@gmail.com
                   </a>
                   .
                 </p>

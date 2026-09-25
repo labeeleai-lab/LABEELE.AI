@@ -56,8 +56,8 @@ export default function SecurityPage() {
               <h3 className="font-semibold text-white mb-2">Found a security issue?</h3>
               <p className="text-gray-400 text-sm">
                 Please report it to{' '}
-                <a href="mailto:security@labeele.ai" className="text-gold-500 hover:text-gold-400">
-                  security@labeele.ai
+                <a href="mailto:labeeleai@gmail.com" className="text-gold-500 hover:text-gold-400">
+                  labeeleai@gmail.com
                 </a>{' '}
                 &mdash; we take reports seriously and will respond promptly.
               </p>
