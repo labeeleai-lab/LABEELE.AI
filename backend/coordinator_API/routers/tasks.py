@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from coordinator_API.core.config import logger, APP_DIR, FEEDBACK_LOG_FILE
 from coordinator_API.core.db import get_db
 from coordinator_API.core.security import require_admin_secret, verify_token
+from coordinator_API.core import math_solver
 import coordinator_API.core.state as state
 from coordinator_API.models.orm import Agent, Task, TrainingData, PersonaConfig, KnowledgeChunk
 from coordinator_API.models.schemas import TaskCreate, TaskSubmission, TaskResponse, FeedbackSubmission
@@ -187,6 +188,18 @@ async def submit_task(
             logger.warning(f"⚠️ Cache lookup failed, continuing without it: {cache_error}")
             db.rollback()
 
+        # A2. Deterministic math - the local model has no real arithmetic
+        # ability and will confidently guess wrong answers for basic math
+        # (proven live: "what's 15% of 240?" -> hallucinated 45 instead of
+        # 36). Simple, unambiguous arithmetic questions are solved exactly
+        # instead of asking the model to guess.
+        if not final_response:
+            math_answer = math_solver.try_solve(task_data.description)
+            if math_answer:
+                final_response = math_answer
+                response_source = "math_solver"
+                logger.info("🧮 Answered with deterministic math solver")
+
         # B. Local Duke Brain
         if not final_response:
             logger.info(f"🧠 Asking LOCAL DUKE BRAIN for {target_agent}")
@@ -321,6 +334,7 @@ async def submit_task(
         # 5. Return Result
         confidence_map = {
             "cache": 0.98,
+            "math_solver": 0.99,
             "gemini_cloud": 0.95,
             "duke_local": 0.75,
             "unknown": 0.5
