@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Send, Loader2, Check, AlertCircle, Shield, Brain, Server, Code2, Rocket, Eye, Network, TrendingUp } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Send, Loader2, Check, AlertCircle, Shield, Brain, Server, Code2, Rocket, Eye, Network, TrendingUp, Paperclip, X } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import GlassCard from '../components/GlassCard'
 import StatusCard from '../components/StatusCard'
@@ -56,6 +56,24 @@ export default function DashboardPage() {
   const [result, setResult] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Kept in sync with backend/coordinator_API/core/document_qa.py - capped
+  // well under Vercel's ~4.5MB serverless request-body limit (this file is
+  // sent base64-encoded, ~4/3 its raw size), not just a file-size opinion.
+  const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
+
+  const readFileAsBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        resolve(result.slice(result.indexOf(',') + 1))
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
 
   const refreshHistory = useCallback(async () => {
     setHistory(await listRecentQueries())
@@ -80,16 +98,26 @@ export default function DashboardPage() {
     setError(null)
 
     try {
+      let attachment_base64: string | undefined
+      let attachment_name: string | undefined
+      if (attachedFile) {
+        attachment_base64 = await readFileAsBase64(attachedFile)
+        attachment_name = attachedFile.name
+      }
+
       const data = await dukeApi.submitTask({
         description: query,
         complexity: 5,
         target_agent: selectedAgent,
         buyer_id: userEmail ?? 'dashboard-user',
+        attachment_base64,
+        attachment_name,
       })
 
       const response = data.response || 'No response received'
       setResult(response)
       setQuery('')
+      setAttachedFile(null)
 
       if (userEmail) {
         await saveQuery(selectedAgent, query, response)
@@ -177,11 +205,52 @@ export default function DashboardPage() {
                   id="query"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Describe what you need the specialist to help with..."
+                  placeholder="Describe what you need the specialist to help with... (paste a link or attach a file to ask about it)"
                   rows={5}
                   disabled={loading}
                   className="w-full px-4 py-3 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors resize-none"
                 />
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.md,.csv,.json,.log"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file && file.size > MAX_ATTACHMENT_BYTES) {
+                    setError('That file is too large (3MB limit).')
+                  } else if (file) {
+                    setAttachedFile(file)
+                    setError(null)
+                  }
+                  e.target.value = ''
+                }}
+              />
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-white/5 border border-gold-500/20 text-gray-300 hover:border-gold-500/50 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <Paperclip className="w-3.5 h-3.5" /> Attach a file
+                </button>
+                {attachedFile && (
+                  <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs bg-gold-500/10 border border-gold-500/30 text-gold-300">
+                    {attachedFile.name}
+                    <button
+                      type="button"
+                      onClick={() => setAttachedFile(null)}
+                      aria-label="Remove attachment"
+                      className="text-gold-400 hover:text-gold-200 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
               </div>
 
               <button

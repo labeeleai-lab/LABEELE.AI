@@ -72,6 +72,11 @@ class TaskSubmission(BaseModel):
     complexity: int = Field(..., ge=1, le=10)
     buyer_id: Optional[str] = None
     target_agent: Optional[str] = Field(None, alias="agent")
+    # One-off document attachment (see core/document_qa.py) - a user
+    # attaching a file to this specific question, not a persistent
+    # Knowledge upload. attachment_name's extension picks the extractor.
+    attachment_base64: Optional[str] = None
+    attachment_name: Optional[str] = Field(default=None, max_length=255)
     model_config = {"populate_by_name": True}
 
     @field_validator("description")

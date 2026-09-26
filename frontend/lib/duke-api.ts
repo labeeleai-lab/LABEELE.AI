@@ -53,6 +53,10 @@ export interface SubmitTaskRequest {
   complexity: number
   target_agent?: string
   buyer_id?: string
+  // One-off document attachment for this question only (not a persistent
+  // Knowledge upload) - see backend/coordinator_API/core/document_qa.py.
+  attachment_base64?: string
+  attachment_name?: string
 }
 
 export interface SubmitTaskResponse {
