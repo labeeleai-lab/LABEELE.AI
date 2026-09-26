@@ -153,10 +153,17 @@ async def clear_training_cache(db: Session = Depends(get_db)):
 async def retrain_all_agents(db: Session = Depends(get_db)):
     try:
         duke_pipeline.model = None
-        await duke_pipeline.train_model(db)
-        return {"status": "success"}
+        result = await duke_pipeline.train_model(db)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/training/progress", dependencies=[Depends(require_admin_secret)])
+async def get_training_progress():
+    """Live epoch-by-epoch state of whatever training run is (or was last) in
+    progress - polled by the JIREH training page while a retrain is running."""
+    return duke_pipeline.progress
 
 
 @router.get(

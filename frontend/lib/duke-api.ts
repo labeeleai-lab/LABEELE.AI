@@ -113,6 +113,27 @@ export interface RetrainResult {
   skipped_low_rated?: number
 }
 
+export interface TrainingProgressPoint {
+  epoch: number
+  train_loss: number
+  val_loss: number
+}
+
+export interface TrainingProgress {
+  status: 'idle' | 'curating' | 'training' | 'saving' | 'complete' | 'skipped' | 'error'
+  message: string
+  epoch: number
+  max_epochs: number
+  train_loss: number | null
+  val_loss: number | null
+  best_val_loss: number | null
+  usable_samples: number
+  total_samples: number
+  history: TrainingProgressPoint[]
+  model_version: number | null
+  validation_accuracy: number | null
+}
+
 export interface DukeTask {
   id: string
   description: string
@@ -359,6 +380,7 @@ export const dukeApi = {
 
   // Admin: training controls
   retrainAgents: () => adminRequest<RetrainResult>('/admin/retrain-agents', { method: 'POST' }, 60_000),
+  trainingProgress: () => adminRequest<TrainingProgress>('/admin/training/progress', {}, 8_000),
   clearTrainingCache: () => adminRequest<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
   uploadTrainingData: (examples: TrainingExample[]) =>
     adminRequest<TrainingUploadResult>(

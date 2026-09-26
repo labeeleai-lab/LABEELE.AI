@@ -2,6 +2,7 @@
 ml/pipeline.py - RealDukeMLPipeline (the real, trainable Duke model wrapper)
 and the duke_pipeline singleton used across the app.
 """
+import asyncio
 import json
 import logging
 import os
@@ -56,6 +57,24 @@ class RealDukeMLPipeline:
             "recent_loss": 0.0,
             "last_training_time": None,
             "avg_trust_score": 0.0
+        }
+
+        # Live progress state, polled by GET /admin/training/progress so the
+        # JIREH training page can show what's happening epoch-by-epoch
+        # instead of just a spinner that hides the whole run.
+        self.progress = {
+            "status": "idle",  # idle | curating | training | saving | complete | skipped | error
+            "message": "No training run in progress.",
+            "epoch": 0,
+            "max_epochs": 0,
+            "train_loss": None,
+            "val_loss": None,
+            "best_val_loss": None,
+            "usable_samples": 0,
+            "total_samples": 0,
+            "history": [],  # [{epoch, train_loss, val_loss}, ...] for this run only
+            "model_version": None,
+            "validation_accuracy": None,
         }
 
         # Ensure path variables are accessible (Assumes these are in duke_config)
@@ -179,6 +198,19 @@ class RealDukeMLPipeline:
         """
         import random
 
+        self.progress.update({
+            "status": "curating",
+            "message": "Reading training samples and filtering out low-quality data...",
+            "epoch": 0,
+            "max_epochs": 0,
+            "train_loss": None,
+            "val_loss": None,
+            "best_val_loss": None,
+            "history": [],
+            "validation_accuracy": None,
+        })
+        await asyncio.sleep(0)
+
         try:
             training_data = db.query(TrainingData).all()
 
@@ -224,8 +256,15 @@ class RealDukeMLPipeline:
                 f"{skipped_duplicate} duplicates, {skipped_low_rated} low-rated)"
             )
 
+            self.progress["usable_samples"] = len(quality_samples)
+            self.progress["total_samples"] = len(training_data)
+
             if len(quality_samples) < 10:
                 logger.warning(f"⚠️ Not enough quality samples: {len(quality_samples)} (need 10+)")
+                self.progress.update({
+                    "status": "skipped",
+                    "message": f"Skipped - only {len(quality_samples)} usable sample(s) after quality filtering (need 10+).",
+                })
                 return {
                     "status": "skipped",
                     "reason": "insufficient_quality_samples",
@@ -234,6 +273,8 @@ class RealDukeMLPipeline:
                 }
 
             logger.info(f"🧠 DUKE V2.0 TRAINING STARTING with {len(quality_samples)} quality samples")
+            self.progress["message"] = f"Building vocabulary from {len(quality_samples)} quality samples..."
+            await asyncio.sleep(0)
 
             # 2. Train/validation split (85/15, shuffled) - the previous version
             # trained and "validated" on the exact same data, which can't
@@ -281,6 +322,12 @@ class RealDukeMLPipeline:
             max_epochs = 40
             epochs_run = 0
 
+            self.progress.update({
+                "status": "training",
+                "message": f"Training epoch 1 of up to {max_epochs}...",
+                "max_epochs": max_epochs,
+            })
+
             for epoch in range(max_epochs):
                 epochs_run = epoch + 1
                 self.model.train()
@@ -307,12 +354,33 @@ class RealDukeMLPipeline:
                     patience_counter = 0
                 else:
                     patience_counter += 1
-                    if patience_counter >= patience:
-                        logger.info(f"⏹️ Early stopping at epoch {epochs_run} (no val improvement for {patience} epochs)")
-                        break
+
+                self.progress["epoch"] = epochs_run
+                self.progress["train_loss"] = total_loss.item()
+                self.progress["val_loss"] = val_loss
+                self.progress["best_val_loss"] = best_val_loss
+                self.progress["message"] = f"Training epoch {epochs_run} of up to {max_epochs}..."
+                self.progress["history"].append({
+                    "epoch": epochs_run,
+                    "train_loss": total_loss.item(),
+                    "val_loss": val_loss,
+                })
+                # Yield control back to the event loop so a concurrent GET to
+                # /admin/training/progress can actually be served mid-run,
+                # instead of the whole process appearing frozen until this
+                # coroutine returns.
+                await asyncio.sleep(0)
+
+                if patience_counter >= patience:
+                    logger.info(f"⏹️ Early stopping at epoch {epochs_run} (no val improvement for {patience} epochs)")
+                    self.progress["message"] = f"Early stopping at epoch {epochs_run} - no improvement for {patience} epochs."
+                    break
 
             # Restore the checkpoint with the best validation loss, not
             # necessarily whichever epoch happened to run last.
+            self.progress["status"] = "saving"
+            self.progress["message"] = "Saving checkpoint and computing final validation accuracy..."
+            await asyncio.sleep(0)
             if best_state is not None:
                 self.model.load_state_dict(best_state)
             self.model.eval()
@@ -357,6 +425,13 @@ class RealDukeMLPipeline:
                 f"epochs: {epochs_run}, val_accuracy: {validation_accuracy:.3f})"
             )
 
+            self.progress.update({
+                "status": "complete",
+                "message": f"Training complete - model v{self.model_version} deployed.",
+                "model_version": self.model_version,
+                "validation_accuracy": validation_accuracy,
+            })
+
             return {
                 "status": "success",
                 "model_version": self.model_version,
@@ -374,6 +449,7 @@ class RealDukeMLPipeline:
 
         except Exception as e:
             logger.error(f"❌ V2 Training failed: {e}")
+            self.progress.update({"status": "error", "message": str(e)})
             raise
 
 # Initialize Duke Pipeline Global

@@ -18,6 +18,8 @@ import {
   Info,
   Network,
   Circle,
+  BrainCircuit,
+  Sparkles,
 } from 'lucide-react'
 import {
   LineChart,
@@ -26,6 +28,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts'
 import AdminShell from '../../components/AdminShell'
@@ -38,6 +41,7 @@ import {
   type LearningStatus,
   type TrainingStats,
   type RetrainResult,
+  type TrainingProgress,
   type TrainingExample,
   type TrainingUploadResult,
   type ModelVersionSummary,
@@ -110,6 +114,8 @@ export default function AdminTrainingPage() {
   const [stats, setStats] = useState<{ data?: TrainingStats; loading: boolean; error?: string }>({ loading: true })
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [retrainResult, setRetrainResult] = useState<RetrainResult | null>(null)
+  const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null)
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const filesInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -229,9 +235,38 @@ export default function AdminTrainingPage() {
 
   useEffect(refresh, [])
 
+  const stopProgressPolling = () => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current)
+      progressTimerRef.current = null
+    }
+  }
+
+  useEffect(() => stopProgressPolling, [])
+
   const handleRetrain = async () => {
     setNotice(null)
     setRetrainResult(null)
+    setTrainingProgress({
+      status: 'curating',
+      message: 'Starting training run...',
+      epoch: 0,
+      max_epochs: 0,
+      train_loss: null,
+      val_loss: null,
+      best_val_loss: null,
+      usable_samples: 0,
+      total_samples: 0,
+      history: [],
+      model_version: null,
+      validation_accuracy: null,
+    })
+
+    stopProgressPolling()
+    progressTimerRef.current = setInterval(() => {
+      dukeApi.trainingProgress().then(setTrainingProgress, () => {})
+    }, 700)
+
     try {
       const result = await dukeApi.retrainAgents()
       setRetrainResult(result)
@@ -246,6 +281,11 @@ export default function AdminTrainingPage() {
       refresh()
     } catch (err) {
       setNotice({ type: 'error', message: err instanceof DukeApiError ? err.message : 'Failed to trigger retraining.' })
+    } finally {
+      // One last poll so the panel settles on the true final state (e.g.
+      // "complete") instead of freezing on whatever the last interval tick caught.
+      dukeApi.trainingProgress().then(setTrainingProgress, () => {})
+      stopProgressPolling()
     }
   }
 
@@ -325,6 +365,8 @@ export default function AdminTrainingPage() {
           <ConfirmButton label="Clear cache" confirmLabel="Click again to confirm" icon={Trash2} tone="danger" onConfirm={handleClearCache} />
         </GlassCard>
       </div>
+
+      {trainingProgress && <TrainingProgressPanel progress={trainingProgress} />}
 
       <GlassCard className="mt-6">
         <h2 className="font-semibold text-white mb-2">Import training data</h2>
@@ -664,6 +706,105 @@ export default function AdminTrainingPage() {
         </div>
       </div>
     </AdminShell>
+  )
+}
+
+const PROGRESS_STATUS_STYLES: Record<TrainingProgress['status'], { label: string; className: string }> = {
+  idle: { label: 'Idle', className: 'text-gray-400 bg-white/5 border-gray-600/30' },
+  curating: { label: 'Curating data', className: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
+  training: { label: 'Training', className: 'text-gold-500 bg-gold-500/10 border-gold-500/30' },
+  saving: { label: 'Saving checkpoint', className: 'text-amber-300 bg-amber-500/10 border-amber-500/30' },
+  complete: { label: 'Complete', className: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' },
+  skipped: { label: 'Skipped', className: 'text-gray-400 bg-white/5 border-gray-600/30' },
+  error: { label: 'Error', className: 'text-red-300 bg-red-500/10 border-red-500/30' },
+}
+
+function TrainingProgressPanel({ progress }: { progress: TrainingProgress }) {
+  const isActive = progress.status === 'curating' || progress.status === 'training' || progress.status === 'saving'
+  const statusStyle = PROGRESS_STATUS_STYLES[progress.status] ?? PROGRESS_STATUS_STYLES.idle
+  const percent =
+    progress.max_epochs > 0 ? Math.min(100, Math.round((progress.epoch / progress.max_epochs) * 100)) : null
+
+  return (
+    <GlassCard className="mt-6 border-gold-500/30">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-white flex items-center gap-2">
+          <BrainCircuit className={`w-5 h-5 text-gold-500 ${isActive ? 'animate-pulse' : ''}`} />
+          Live training run
+          {isActive && <Sparkles className="w-4 h-4 text-gold-400 animate-pulse" />}
+        </h2>
+        <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${statusStyle.className}`}>
+          {statusStyle.label}
+        </span>
+      </div>
+
+      <p className="text-sm text-gray-300 mb-4">{progress.message}</p>
+
+      <div className="mb-5">
+        <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
+          <span>{percent !== null ? `Epoch ${progress.epoch} of ${progress.max_epochs}` : 'Preparing...'}</span>
+          {percent !== null && <span>{percent}%</span>}
+        </div>
+        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+          {percent !== null ? (
+            <div
+              className="h-full rounded-full bg-gold-500 transition-all duration-500"
+              style={{ width: `${percent}%` }}
+            />
+          ) : (
+            <div className={`h-full w-full rounded-full bg-gold-500/40 ${isActive ? 'animate-pulse' : ''}`} />
+          )}
+        </div>
+      </div>
+
+      {progress.total_samples > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Usable samples</div>
+            <div className="text-lg font-bold text-white">
+              {progress.usable_samples} / {progress.total_samples}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Train loss</div>
+            <div className="text-lg font-bold text-white">{progress.train_loss?.toFixed(4) ?? '-'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Validation loss</div>
+            <div className="text-lg font-bold text-white">{progress.val_loss?.toFixed(4) ?? '-'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Best validation loss</div>
+            <div className="text-lg font-bold text-gold-500">{progress.best_val_loss?.toFixed(4) ?? '-'}</div>
+          </div>
+        </div>
+      )}
+
+      {progress.history.length >= 2 && (
+        <div style={{ width: '100%', height: 200 }}>
+          <ResponsiveContainer>
+            <LineChart data={progress.history}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+              <XAxis dataKey="epoch" stroke="#9ca3af" fontSize={12} label={{ value: 'Epoch', position: 'insideBottom', offset: -4, fill: '#9ca3af', fontSize: 11 }} />
+              <YAxis stroke="#9ca3af" fontSize={12} />
+              <Tooltip
+                contentStyle={{ background: '#0f1729', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 8, fontSize: 12 }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="train_loss" name="Train loss" stroke="#d4af37" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="val_loss" name="Validation loss" stroke="#60a5fa" strokeWidth={2} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {progress.status === 'complete' && progress.validation_accuracy != null && (
+        <div className="mt-4 flex items-center gap-2 text-sm text-emerald-300">
+          <CheckCircle2 className="w-4 h-4" />
+          Model v{progress.model_version} deployed - {(progress.validation_accuracy * 100).toFixed(1)}% validation accuracy.
+        </div>
+      )}
+    </GlassCard>
   )
 }
 
