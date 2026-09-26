@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from coordinator_API.core.config import logger, APP_DIR, FEEDBACK_LOG_FILE
 from coordinator_API.core.db import get_db
 from coordinator_API.core.security import require_admin_secret, verify_token
-from coordinator_API.core import math_solver
+from coordinator_API.core import math_solver, grounding
 import coordinator_API.core.state as state
 from coordinator_API.models.orm import Agent, Task, TrainingData, PersonaConfig, KnowledgeChunk
 from coordinator_API.models.schemas import TaskCreate, TaskSubmission, TaskResponse, FeedbackSubmission
@@ -200,6 +200,23 @@ async def submit_task(
                 response_source = "math_solver"
                 logger.info("🧮 Answered with deterministic math solver")
 
+        # A3. Deterministic date/time/weather - same reasoning as A2: the
+        # local model has no clock and no live internet access, so date,
+        # time, and weather questions are answered from a real clock/timezone
+        # and a live weather API instead of letting the model guess (proven
+        # live: it reported raw server UTC as "the current time" for a
+        # Lavon, TX question - hours off from actual local time - and
+        # silently dropped the weather half of the question entirely).
+        if not final_response:
+            try:
+                grounded_answer = grounding.try_ground(task_data.description)
+                if grounded_answer:
+                    final_response = grounded_answer
+                    response_source = "grounding"
+                    logger.info("🌎 Answered with deterministic date/time/weather grounding")
+            except Exception as grounding_error:
+                logger.warning(f"⚠️ Grounding failed, falling back to the model: {grounding_error}")
+
         # B. Local Duke Brain
         if not final_response:
             logger.info(f"🧠 Asking LOCAL DUKE BRAIN for {target_agent}")
@@ -335,6 +352,7 @@ async def submit_task(
         confidence_map = {
             "cache": 0.98,
             "math_solver": 0.99,
+            "grounding": 0.97,
             "gemini_cloud": 0.95,
             "duke_local": 0.75,
             "unknown": 0.5

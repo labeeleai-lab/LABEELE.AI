@@ -21,7 +21,6 @@ still unused/dead.
 """
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -133,23 +132,13 @@ class DukeGenerativeBrain:
                 self.model = None
                 self.mode = "unavailable"
 
-    # A small local LLM has no clock and no internet - it will confidently
-    # hallucinate a plausible-looking wrong date if asked directly, since
-    # nothing in training ever taught it "today". Date/time questions are
-    # answered deterministically instead of trusting the model to know.
-    DATE_TIME_PATTERN = re.compile(
-        r"\b(what'?s?\s+(is\s+)?(the\s+)?(current\s+|today'?s\s+)?(date|day|time)\b|"
-        r"what\s+(day|date|time)\s+is\s+it|current\s+date|current\s+time)",
-        re.IGNORECASE
-    )
-
     def generate_response(self, prompt, max_length=256):
         if not self.model or not self.tokenizer:
             return "Duke Brain is currently offline or initializing."
 
-        if self.DATE_TIME_PATTERN.search(prompt):
-            now = datetime.now()
-            return f"Today's date is {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}), current time {now.strftime('%H:%M')}."
+        # Date/time (and weather) questions are intercepted before this is
+        # ever called - see core/grounding.py, used by routers/tasks.py -
+        # so this model is never asked to guess at them.
 
         try:
             # Ground the model in the real date so date-adjacent answers

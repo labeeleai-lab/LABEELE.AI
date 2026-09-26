@@ -42,4 +42,9 @@ psycopg2-binary
 pgvector
 pypdf
 
+# Deterministic date/time/weather grounding (core/grounding.py) - tzdata
+# guarantees zoneinfo can resolve IANA timezones (e.g. for weather lookups)
+# even on a base image that doesn't ship OS-level tzdata.
+tzdata
+
 
