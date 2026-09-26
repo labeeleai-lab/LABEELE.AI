@@ -5,7 +5,7 @@ import { SESSION_COOKIE, verifySessionToken } from './lib/session'
 // ignores middleware.ts placed anywhere else, including inside app/, which is why
 // /dashboard was previously reachable with no authentication at all.
 
-const PROTECTED_PREFIXES = ['/dashboard', '/account', '/admin']
+const PROTECTED_PREFIXES = ['/dashboard', '/account', '/jireh']
 const AUTH_PAGES = ['/login', '/signup']
 
 export async function middleware(request: NextRequest) {
@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (path.startsWith('/admin') && session && !session.is_admin) {
+  if (path.startsWith('/jireh') && session && !session.is_admin) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
@@ -43,5 +43,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/account/:path*', '/admin/:path*', '/login', '/signup'],
+  matcher: ['/dashboard/:path*', '/account/:path*', '/jireh/:path*', '/login', '/signup'],
 }

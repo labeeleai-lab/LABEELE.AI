@@ -6,14 +6,14 @@ import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, ArrowLeft } from 'lucide-react'
 
 const NAV_LINKS = [
-  { href: '/admin', label: 'Overview' },
-  { href: '/admin/training', label: 'Training' },
-  { href: '/admin/personas', label: 'Personas' },
-  { href: '/admin/knowledge', label: 'Knowledge' },
-  { href: '/admin/annotate', label: 'Annotate' },
-  { href: '/admin/code', label: 'Code' },
-  { href: '/admin/messages', label: 'Messages' },
-  { href: '/admin/team', label: 'Team' },
+  { href: '/jireh', label: 'Overview' },
+  { href: '/jireh/training', label: 'Training' },
+  { href: '/jireh/personas', label: 'Personas' },
+  { href: '/jireh/knowledge', label: 'Knowledge' },
+  { href: '/jireh/annotate', label: 'Annotate' },
+  { href: '/jireh/code', label: 'Code' },
+  { href: '/jireh/messages', label: 'Messages' },
+  { href: '/jireh/team', label: 'Team' },
 ]
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
@@ -33,7 +33,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-4 shrink-0">
             <Image src="/images/Logo.png" alt="LABEELE.AI" width={110} height={28} className="h-5 w-auto object-contain" />
             <span className="text-xs font-semibold uppercase tracking-wide text-gold-500/80 border-l border-gold-500/20 pl-4">
-              Admin
+              JIREH Mode
             </span>
           </div>
 

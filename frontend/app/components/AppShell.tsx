@@ -51,13 +51,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ))}
             {isAdmin && (
               <Link
-                href="/admin"
+                href="/jireh"
                 className={`flex items-center gap-1.5 text-sm transition-colors ${
-                  pathname.startsWith('/admin') ? 'text-gold-500 font-medium' : 'text-gray-300 hover:text-gold-500'
+                  pathname.startsWith('/jireh') ? 'text-gold-500 font-medium' : 'text-gray-300 hover:text-gold-500'
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Admin
+                JIREH Mode
               </Link>
             )}
           </nav>
@@ -65,9 +65,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-4">
             {isAdmin && (
               <Link
-                href="/admin"
+                href="/jireh"
                 className="sm:hidden flex items-center gap-1.5 text-sm text-gold-500"
-                aria-label="Admin"
+                aria-label="JIREH Mode"
               >
                 <ShieldCheck className="w-4 h-4" />
               </Link>

@@ -24,10 +24,10 @@ export default function AdminTeamPage() {
     try {
       const res = await fetch('/api/admin/team')
       const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Failed to load admins')
+      if (!res.ok) throw new Error(body.error || 'Failed to load access list')
       setAdmins(body.admins)
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load admins')
+      setLoadError(err instanceof Error ? err.message : 'Failed to load access list')
     }
   }
 
@@ -46,11 +46,11 @@ export default function AdminTeamPage() {
         body: JSON.stringify({ email: newEmail }),
       })
       const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Failed to add admin')
+      if (!res.ok) throw new Error(body.error || 'Failed to add access')
       setNewEmail('')
       await loadAdmins()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to add admin')
+      setFormError(err instanceof Error ? err.message : 'Failed to add access')
     } finally {
       setAdding(false)
     }
@@ -61,10 +61,10 @@ export default function AdminTeamPage() {
     try {
       const res = await fetch(`/api/admin/team/${encodeURIComponent(email)}`, { method: 'DELETE' })
       const body = await res.json()
-      if (!res.ok) throw new Error(body.error || 'Failed to remove admin')
+      if (!res.ok) throw new Error(body.error || 'Failed to remove access')
       await loadAdmins()
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to remove admin')
+      setLoadError(err instanceof Error ? err.message : 'Failed to remove access')
     } finally {
       setRemoving(null)
     }
@@ -73,11 +73,11 @@ export default function AdminTeamPage() {
   return (
     <AdminShell>
       <h1 className="text-3xl font-bold text-white mb-1">Team</h1>
-      <p className="text-gray-400 mb-8">Manage who has access to this admin portal.</p>
+      <p className="text-gray-400 mb-8">Manage who has access to JIREH Mode.</p>
 
       <div className="max-w-2xl space-y-6">
         <GlassCard>
-          <h2 className="text-lg font-semibold text-white mb-4">Add an admin</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">Add access</h2>
           <form onSubmit={handleAdd} className="flex gap-3">
             <input
               type="email"
@@ -104,7 +104,7 @@ export default function AdminTeamPage() {
         </GlassCard>
 
         <GlassCard>
-          <h2 className="text-lg font-semibold text-white mb-4">Current admins</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">Who has access</h2>
           {loadError && <p className="text-red-400 text-sm mb-3">{loadError}</p>}
           {!admins ? (
             <div className="flex items-center gap-2 text-gray-400 text-sm">
@@ -127,7 +127,7 @@ export default function AdminTeamPage() {
                   <button
                     onClick={() => handleRemove(admin.email)}
                     disabled={removing === admin.email || admins.length <= 1}
-                    title={admins.length <= 1 ? "Can't remove the last admin" : 'Remove admin'}
+                    title={admins.length <= 1 ? "Can't remove the last person with access" : 'Remove access'}
                     className="text-gray-500 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {removing === admin.email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}

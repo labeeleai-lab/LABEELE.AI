@@ -34,11 +34,11 @@ function useFetch<T>(fn: () => Promise<T>) {
 }
 
 const SECTIONS = [
-  { href: '/admin/training', icon: GraduationCap, title: 'Training', description: 'Trigger retraining, clear the training cache, view stats.' },
-  { href: '/admin/personas', icon: Users2, title: 'Personas', description: "Edit DUKE's personas at runtime, or create new ones." },
-  { href: '/admin/knowledge', icon: BookOpen, title: 'Knowledge', description: 'Train DUKE or any agent with documents - retrieved live in real responses.' },
-  { href: '/admin/annotate', icon: ClipboardList, title: 'Annotate', description: 'Review recent queries and rate/correct responses.' },
-  { href: '/admin/code', icon: Code2, title: 'Code', description: 'Browse, edit, and commit repo files via GitHub.' },
+  { href: '/jireh/training', icon: GraduationCap, title: 'Training', description: 'Trigger retraining, clear the training cache, view stats.' },
+  { href: '/jireh/personas', icon: Users2, title: 'Personas', description: "Edit DUKE's personas at runtime, or create new ones." },
+  { href: '/jireh/knowledge', icon: BookOpen, title: 'Knowledge', description: 'Train DUKE or any agent with documents - retrieved live in real responses.' },
+  { href: '/jireh/annotate', icon: ClipboardList, title: 'Annotate', description: 'Review recent queries and rate/correct responses.' },
+  { href: '/jireh/code', icon: Code2, title: 'Code', description: 'Browse, edit, and commit repo files via GitHub.' },
 ]
 
 export default function AdminOverviewPage() {
@@ -49,7 +49,7 @@ export default function AdminOverviewPage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Admin overview</h1>
+      <h1 className="text-3xl font-bold text-white mb-1">JIREH Mode overview</h1>
       <p className="text-gray-400 mb-8">Live status of the DUKE backend.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
