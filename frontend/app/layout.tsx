@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   authors: [{ name: 'LABEELE.AI' }],
   metadataBase: new URL('https://www.labeele.ai'),
   icons: {
-    icon: '/images/Logo.png',
-    apple: '/images/Logo.png',
+    icon: '/images/Favicon.png',
+    apple: '/images/Favicon.png',
   },
   openGraph: {
     title: 'LABEELE.AI - Specialist AI Agents',
