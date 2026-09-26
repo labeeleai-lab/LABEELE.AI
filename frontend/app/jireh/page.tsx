@@ -71,8 +71,8 @@ export default function AdminOverviewPage() {
           label="Specialists"
           loading={learning.loading}
           error={learning.error}
-          value={learning.data ? String(learning.data.agent_personas.length) : undefined}
-          detail={learning.data ? `${learning.data.total_inferences} total queries` : undefined}
+          value={learning.data ? String(learning.data.agent_personas?.length ?? 0) : undefined}
+          detail={learning.data ? `${learning.data.total_inferences ?? 0} total queries` : undefined}
         />
         <StatusCard
           label="IAC validated"

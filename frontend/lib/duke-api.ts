@@ -32,15 +32,15 @@ export interface ModelStatus {
 
 export interface LearningStatus {
   status: string
-  last_training_time: string
-  total_samples_trained: number
-  memory_size: number
-  agent_personas: string[]
+  last_training_time?: string
+  total_samples_trained?: number
+  memory_size?: number
+  agent_personas?: string[]
   model_version: string
-  validation_accuracy: number
-  estimated_cost_usd: number
-  total_inferences: number
-  recent_loss: number
+  validation_accuracy?: number
+  estimated_cost_usd?: number
+  total_inferences?: number
+  recent_loss?: number
 }
 
 export interface HealthStatus {

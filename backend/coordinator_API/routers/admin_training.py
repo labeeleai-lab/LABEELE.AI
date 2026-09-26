@@ -118,13 +118,17 @@ async def get_learning_status(db: Session = Depends(get_db)):
 
 @router.get("/model/status")
 async def get_model_status(db: Session = Depends(get_db)):
-    ver = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.created_at)).first()
-    return {
-        "status": "ready" if ver and ver.is_production else "training",
-        "version": ver.version_number if ver else 0,
-        "accuracy": ver.validation_accuracy if ver else 0.0,
-        "training_samples": ver.training_samples if ver else 0
-    }
+    try:
+        ver = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.created_at)).first()
+        return {
+            "status": "ready" if ver and ver.is_production else "training",
+            "version": ver.version_number if ver else 0,
+            "accuracy": ver.validation_accuracy if ver else 0.0,
+            "training_samples": ver.training_samples if ver else 0
+        }
+    except Exception as e:
+        logger.error(f"❌ Model status error: {e}")
+        return {"status": "training", "version": 0, "accuracy": 0.0, "training_samples": 0}
 
 @router.get("/training/stats", dependencies=[Depends(require_admin_secret)])
 async def get_training_stats_api():
