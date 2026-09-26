@@ -23,6 +23,7 @@ from coordinator_API.core.config import logger, get_training_stats
 from coordinator_API.core.db import get_db
 from coordinator_API.core.security import require_admin_secret
 from coordinator_API.models.orm import Agent, ModelVersionBase, TrainingData
+from coordinator_API.personas.specialists import SPECIALIST_PERSONAS
 from coordinator_API.models.schemas import (
     TrainingUploadRequest, TrainingUploadResponse, ModelVersionSummary,
 )
@@ -114,7 +115,15 @@ async def get_learning_status(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"❌ Learning status error: {e}")
-        return {"status": "error", "model_version": "v0.0.0"}
+        # The list of specialists themselves is fixed code, not a database
+        # row - still report it even when the database (agent stats,
+        # training history) is unreachable, instead of showing 0 online.
+        return {
+            "status": "error",
+            "model_version": "v0.0.0",
+            "agent_personas": list(SPECIALIST_PERSONAS.keys()),
+            "total_inferences": 0,
+        }
 
 @router.get("/model/status")
 async def get_model_status(db: Session = Depends(get_db)):
