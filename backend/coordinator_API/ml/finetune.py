@@ -34,6 +34,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from coordinator_API.core.config import logger, FEEDBACK_LOG_FILE, get_persistent_data_dir
+from coordinator_API.core.db import SessionLocal
 import coordinator_API.core.state as state
 from coordinator_API.models.orm import TrainingData, ModelVersionBase
 
@@ -329,17 +330,22 @@ async def run_finetune(db: Session) -> dict:
     # The model is already merged, live-swapped into brain.model, and saved
     # to persistent disk at this point - real success, independent of
     # whether recording it in the dashboard's history table below works.
-    # A long training run (this one routinely runs 10-20+ minutes) can
-    # outlast a database connection's idle timeout on a managed provider
-    # (see core/db.py's pool_pre_ping/pool_recycle, added after exactly
-    # this happened live), so this bookkeeping write is deliberately
-    # best-effort and must never make a successful run report as "error".
+    #
+    # Deliberately opens a BRAND NEW session here instead of reusing the
+    # `db` argument: pool_pre_ping (core/db.py) only tests a connection
+    # when it's checked OUT of the pool, and this request's session
+    # checked its connection out once, at the very start, then held it
+    # idle through the entire 10-20+ minute training run - pre_ping never
+    # got a chance to catch it going stale, and this write failed the same
+    # way even after adding pre_ping/pool_recycle. A fresh session gets a
+    # freshly-verified connection regardless of how long training took.
     version_number = None
+    fresh_db = SessionLocal()
     try:
-        latest = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.version_number)).first()
+        latest = fresh_db.query(ModelVersionBase).order_by(desc(ModelVersionBase.version_number)).first()
         version_number = (latest.version_number if latest else 0) + 1
 
-        db.add(ModelVersionBase(
+        fresh_db.add(ModelVersionBase(
             id=str(uuid.uuid4()),
             version_number=version_number,
             training_samples=len(quality_samples),
@@ -355,11 +361,13 @@ async def run_finetune(db: Session) -> dict:
                 **stats,
             },
         ))
-        db.commit()
+        fresh_db.commit()
     except Exception as e:
         logger.error(f"⚠️ Fine-tune succeeded but recording it to model_versions failed: {e}")
-        db.rollback()
+        fresh_db.rollback()
         version_number = None
+    finally:
+        fresh_db.close()
 
     progress.update({
         "status": "complete",

@@ -33,12 +33,11 @@ import {
 } from 'recharts'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
-import StatusCard from '../../components/StatusCard'
+import StatusCard, { HintIcon } from '../../components/StatusCard'
 import {
   dukeApi,
   DukeApiError,
   type ModelStatus,
-  type LearningStatus,
   type TrainingStats,
   type RetrainResult,
   type TrainingProgress,
@@ -110,7 +109,6 @@ function ConfirmButton({
 
 export default function AdminTrainingPage() {
   const [model, setModel] = useState<{ data?: ModelStatus; loading: boolean; error?: string }>({ loading: true })
-  const [learning, setLearning] = useState<{ data?: LearningStatus; loading: boolean; error?: string }>({ loading: true })
   const [stats, setStats] = useState<{ data?: TrainingStats; loading: boolean; error?: string }>({ loading: true })
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [retrainResult, setRetrainResult] = useState<RetrainResult | null>(null)
@@ -217,15 +215,10 @@ export default function AdminTrainingPage() {
 
   const refresh = () => {
     setModel({ loading: true })
-    setLearning({ loading: true })
     setStats({ loading: true })
     dukeApi.modelStatus().then(
       (data) => setModel({ data, loading: false }),
       (err) => setModel({ loading: false, error: err instanceof DukeApiError ? err.message : 'Unreachable' }),
-    )
-    dukeApi.learningStatus().then(
-      (data) => setLearning({ data, loading: false }),
-      (err) => setLearning({ loading: false, error: err instanceof DukeApiError ? err.message : 'Unreachable' }),
     )
     dukeApi.trainingStats().then(
       (data) => setStats({ data, loading: false }),
@@ -312,13 +305,14 @@ export default function AdminTrainingPage() {
           error={model.error}
           value={model.data?.status === 'ready' ? 'Ready' : 'Training'}
           detail={model.data ? `v${model.data.version} · ${(model.data.accuracy * 100).toFixed(1)}% accuracy` : undefined}
+          hint="Whether DUKE can answer questions right now (Ready) or is busy in a training run. The version number goes up by one every time a training run finishes; the % is how well that version did on examples it wasn't trained on - not a school-grade percentage, so don't expect 90%+."
         />
         <StatusCard
           label="Training samples"
-          loading={learning.loading}
-          error={learning.error}
-          value={learning.data ? String(learning.data.total_samples_trained) : undefined}
-          detail={learning.data ? `Model ${learning.data.model_version}` : undefined}
+          loading={!summary && !dashboardError}
+          value={summary ? String(summary.total_training_samples) : undefined}
+          detail={summary ? 'Real question-and-answer pairs stored, ready for the next retrain' : undefined}
+          hint="Every real question DUKE has answered gets saved as a potential training example. This is a straight count from the database - not the same number this page used to show above (that one read from an old, disconnected tracker that stayed at 0 no matter how much data existed)."
         />
         <StatusCard
           label="Estimated cost"
@@ -326,6 +320,7 @@ export default function AdminTrainingPage() {
           error={stats.error}
           value={stats.data ? `$${(stats.data.data.estimated_cost_usd ?? 0).toFixed(2)}` : undefined}
           detail={stats.data?.data.total_calls !== undefined ? `${stats.data.data.total_calls} calls logged` : undefined}
+          hint="A leftover estimate from when this app called paid, per-request AI APIs (OpenAI/Gemini). DUKE now runs entirely on your own server with no per-call bill, so this will usually show as close to $0 - it's not measuring your actual server hosting cost."
         />
       </div>
 
@@ -513,23 +508,35 @@ export default function AdminTrainingPage() {
           <h2 className="font-semibold text-white mb-4">Last training run</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Validation accuracy</div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                Validation accuracy
+                <HintIcon text="How confidently DUKE predicts the right words on examples it wasn't trained on, as a percentage - not a school-grade percentage, so a good result can still look lower than you'd expect. Higher is better; what matters most is whether it goes up over successive runs." />
+              </div>
               <div className="text-lg font-bold text-gold-500">
                 {((retrainResult.validation_accuracy ?? 0) * 100).toFixed(1)}%
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Epochs run</div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                Epochs run
+                <HintIcon text="How many complete passes DUKE made through the training examples. Training stops automatically once more passes stop helping, so this won't always be the maximum allowed - that's normal, not a failure." />
+              </div>
               <div className="text-lg font-bold text-white">{retrainResult.epochs_run}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Train / val samples</div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                Train / val samples
+                <HintIcon text="Your usable examples split 85/15: the larger group (train) is what DUKE actively learns from, the smaller group (val, short for 'validation') is held back and never trained on, purely to check honestly whether DUKE improved." />
+              </div>
               <div className="text-lg font-bold text-white">
                 {retrainResult.train_samples} / {retrainResult.val_samples}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-1">Model version</div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                Model version
+                <HintIcon text="A running count of every completed training run - each one that finishes gets the next number up. Higher isn't automatically 'better' on its own; check validation accuracy for that." />
+              </div>
               <div className="text-lg font-bold text-white">v{retrainResult.model_version}</div>
             </div>
           </div>
@@ -560,29 +567,36 @@ export default function AdminTrainingPage() {
           loading={!summary && !dashboardError}
           value={summary ? String(summary.total_tasks_completed) : undefined}
           detail={summary ? `${summary.total_agents} agents` : undefined}
+          hint="Every question ever answered by DUKE or any specialist, all time - a running counter, not a per-day rate."
         />
         <StatusCard
           label="Training samples"
           loading={!summary && !dashboardError}
           value={summary ? String(summary.total_training_samples) : undefined}
+          hint="The same count shown at the top of this page - every stored question-and-answer pair, whether or not it's actually usable yet (quality filtering happens at retrain time, not here)."
         />
         <StatusCard
           label="Knowledge chunks"
           loading={!summary && !dashboardError}
           value={summary ? String(summary.total_knowledge_chunks) : undefined}
           detail={`${summary ? Object.keys(summary.knowledge_chunks_by_agent).length : 0} sources covered`}
+          hint="A completely separate system from training. These are pieces of documents/text uploaded on the Knowledge page that DUKE looks up and reads from when answering - proven to be the most reliable way to make DUKE's answers more accurate."
         />
         <StatusCard
           label="Latest model"
           loading={!summary && !dashboardError}
           value={summary ? `v${summary.latest_model_version}` : undefined}
           detail={summary?.latest_validation_accuracy != null ? `${(summary.latest_validation_accuracy * 100).toFixed(1)}% accuracy` : undefined}
+          hint="The most recently completed real training run and how it scored on examples it wasn't trained on. This is the version currently answering your questions."
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <GlassCard>
-          <h3 className="font-semibold text-white mb-1">Training history</h3>
+          <h3 className="font-semibold text-white mb-1 flex items-center gap-1.5">
+            Training history
+            <HintIcon text="Each point is one completed training run's validation accuracy - how well that version answered examples it wasn't trained on. Look for the line trending up over time; a single run being lower than the last isn't necessarily bad, since more data or different data can shift this run to run." />
+          </h3>
           <p className="text-gray-500 text-xs mb-4">Real validation accuracy across every training run ever recorded.</p>
           {!history ? (
             <div className="flex items-center gap-2 text-gray-400 text-sm py-8 justify-center">
@@ -611,7 +625,10 @@ export default function AdminTrainingPage() {
         </GlassCard>
 
         <GlassCard>
-          <h3 className="font-semibold text-white mb-1">Resource monitoring</h3>
+          <h3 className="font-semibold text-white mb-1 flex items-center gap-1.5">
+            Resource monitoring
+            <HintIcon text="How busy your server is right now. CPU = how much processing power is in use (training and answering questions both push this up). Memory = how much of the server's RAM is holding the model and data in memory. Disk = how much storage is used, including the saved model checkpoint." />
+          </h3>
           <p className="text-gray-500 text-xs mb-4">Real CPU/memory/disk from the backend process. Refreshes every 25s.</p>
           {!resources ? (
             <div className="flex items-center gap-2 text-gray-400 text-sm py-8 justify-center">
@@ -646,7 +663,10 @@ export default function AdminTrainingPage() {
       </div>
 
       <GlassCard className="mb-6">
-        <h3 className="font-semibold text-white mb-4">Agents</h3>
+        <h3 className="font-semibold text-white mb-4 flex items-center gap-1.5">
+          Agents
+          <HintIcon text="DUKE plus every specialist persona. Tasks = questions answered. Knowledge = how many Knowledge-page chunks are available to that agent specifically (DUKE-global chunks aren't counted per-specialist here). Reputation = a multiplier that raises or lowers that agent's standing based on real performance history - 1.00 is neutral. Status is simply idle/active, not a sign of anything being wrong." />
+        </h3>
         {!agents ? (
           <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
@@ -735,6 +755,7 @@ function TrainingProgressPanel({ progress }: { progress: TrainingProgress }) {
           <BrainCircuit className={`w-5 h-5 text-gold-500 ${isActive ? 'animate-pulse' : ''}`} />
           Live training run
           {isActive && <Sparkles className="w-4 h-4 text-gold-400 animate-pulse" />}
+          <HintIcon text="Curating data: sorting through stored questions for usable ones. Training: DUKE is actively learning, epoch by epoch. Saving checkpoint: the trained result is being merged in and written to disk so it survives a server restart. Complete: DUKE is already answering with the new version - no separate 'deploy' step needed." />
         </h2>
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${statusStyle.className}`}>
           {statusStyle.label}
@@ -763,21 +784,33 @@ function TrainingProgressPanel({ progress }: { progress: TrainingProgress }) {
       {progress.total_samples > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
           <div>
-            <div className="text-xs text-gray-500 mb-1">Usable samples</div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+              Usable samples
+              <HintIcon text="How many of your stored questions passed quality checks (not an error, not too short, not a duplicate, not rated 1-2 stars in Annotate) and were actually used in this run." />
+            </div>
             <div className="text-lg font-bold text-white">
               {progress.usable_samples} / {progress.total_samples}
             </div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Train loss</div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+              Train loss
+              <HintIcon text="How 'wrong' DUKE's answers are on the examples it's actively learning from right now - lower is better. This number going down each epoch is a good sign; going up is not." />
+            </div>
             <div className="text-lg font-bold text-white">{progress.train_loss?.toFixed(4) ?? '-'}</div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Validation loss</div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+              Validation loss
+              <HintIcon text="The same 'how wrong' score, but measured on examples DUKE did NOT train on. This is the honest one - it tells you whether DUKE actually got better at answering new questions, not just memorized the training examples." />
+            </div>
             <div className="text-lg font-bold text-white">{progress.val_loss?.toFixed(4) ?? '-'}</div>
           </div>
           <div>
-            <div className="text-xs text-gray-500 mb-1">Best validation loss</div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+              Best validation loss
+              <HintIcon text="The lowest (best) validation loss seen across every epoch this run. DUKE automatically keeps that version even if a later epoch got slightly worse, so you always end up with the best-performing version, not just whichever one finished last." />
+            </div>
             <div className="text-lg font-bold text-gold-500">{progress.best_val_loss?.toFixed(4) ?? '-'}</div>
           </div>
         </div>
