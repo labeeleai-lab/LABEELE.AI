@@ -18,39 +18,59 @@ from sqlalchemy.orm import Session
 
 from coordinator_API.core.config import logger
 from coordinator_API.core.db import get_db
+from coordinator_API.core.security import require_admin_secret
 from coordinator_API.models.schemas import DispatchRequest, ToolRequest, TrainConfigRequest
 
 try:
-    from tools.agent_toolkit import (
-        CodeReader, DiffGenerator, SecurityScanner, MLToolbox, TaskRouter, CloudArchitectTool
-    )
+    from tools.agent_toolkit import CodeReader, DiffGenerator, SecurityScanner, MLToolbox, TaskRouter, CloudArchitectTool
     TOOLS_AVAILABLE = True
     print("✅ Agency Tools Loaded: CodeReader, SecurityScanner, MLToolbox active.")
 except ImportError:
     TOOLS_AVAILABLE = False
     print("⚠️ Agency Tools not found. Ensure 'tools/agent_toolkit.py' exists.")
-    # Fallback mocks to prevent crash if file is missing
+    # Fallback mocks to prevent crash if the file is missing - shaped to
+    # match the REAL classes' actual method names (route_task/scan_source),
+    # not the mismatched static-style names this router used to call
+    # directly on the real classes (TaskRouter.route(), SecurityScanner.scan()
+    # etc.), which don't exist there and would only ever have worked by
+    # accidentally hitting these mocks instead.
     class TaskRouter:
-        @staticmethod
-        def route(p): return "GENERALIST"
+        def route_task(self, p): return "GENERALIST"
     class SecurityScanner:
-        @staticmethod
-        def scan(c): return {"is_secure": True, "issues": []}
+        def scan_source(self, c): return {"status": "complete", "threat_count": 0, "findings": []}
     class MLToolbox:
-        @staticmethod
-        def generate_training_script(c): return "# ML Toolbox not available"
+        pass
     class CodeReader:
-        @staticmethod
-        def analyze_structure(c): return {"error": "Tool missing"}
+        pass
     class DiffGenerator:
         pass
     class CloudArchitectTool:
         pass
 
+# Real, stateless tool instances - the actual classes in tools/agent_toolkit.py
+# expose instance methods (route_task, scan_source), not the static-style
+# calls this router used to make directly on the class.
+_task_router = TaskRouter()
+_security_scanner = SecurityScanner()
+
 router = APIRouter()
 
 
-@router.post("/agency/dispatch")
+# TaskRouter.route_task() returns a human-readable role name ("Principal
+# Security Architect", etc.) - this maps those to the short keys the
+# dispatch logic below branches on. The router used to compare against
+# "SECURITY_EXPERT"/"ML_SPECIALIST"/etc directly, which route_task() never
+# actually returns, so every request silently fell through to the
+# generalist fallback regardless of what was asked.
+_PERSONA_KEY_BY_ROLE = {
+    "Principal Security Architect": "SECURITY_EXPERT",
+    "Senior ML Research Scientist": "ML_SPECIALIST",
+    "Staff Software Engineer": "BACKEND_DEV",
+    "Computer Vision Specialist": "CV_SPECIALIST",
+}
+
+
+@router.post("/agency/dispatch", dependencies=[Depends(require_admin_secret)])
 async def agency_dispatch(req: DispatchRequest, db: Session = Depends(get_db)):
     """
     The Generalist (Traffic Controller) Endpoint.
@@ -58,7 +78,8 @@ async def agency_dispatch(req: DispatchRequest, db: Session = Depends(get_db)):
     """
     try:
         # 1. Determine Intent using the Toolkit Router
-        target_persona = TaskRouter.route(req.prompt)
+        routed_role = _task_router.route_task(req.prompt)
+        target_persona = _PERSONA_KEY_BY_ROLE.get(routed_role, "GENERALIST")
 
         # 2. Prepare Response
         response = {
@@ -74,28 +95,24 @@ async def agency_dispatch(req: DispatchRequest, db: Session = Depends(get_db)):
         # --- SECURITY PATH ---
         if target_persona == "SECURITY_EXPERT":
             if req.context_code and len(req.context_code) > 10:
-                scan_result = SecurityScanner.scan(req.context_code)
+                scan_result = _security_scanner.scan_source(req.context_code)
                 response["data"] = scan_result
                 response["tools_used"].append("StaticSecurityScanner")
-                if scan_result["is_secure"]:
+                threat_count = scan_result.get("threat_count", 0)
+                if scan_result.get("status") == "complete" and threat_count == 0:
                     response["reply"] = f"✅ Security Scan Passed. No critical issues found in {len(req.context_code.splitlines())} lines."
+                elif scan_result.get("status") == "complete":
+                    response["reply"] = f"🚨 CRITICAL ALERT: Found {threat_count} potential vulnerabilities."
                 else:
-                    response["reply"] = f"🚨 CRITICAL ALERT: Found {len(scan_result['issues'])} potential vulnerabilities."
+                    response["reply"] = scan_result.get("message", "Scan could not complete.")
             else:
                 response["action_type"] = "conversation"
                 response["reply"] = "I am ready to secure your infrastructure. Please provide code or logs to analyze."
 
         # --- ML PATH ---
         elif target_persona == "ML_SPECIALIST":
-            if any(k in req.prompt.lower() for k in ["script", "code", "generate", "loop"]):
-                # Generate Training Script
-                script = MLToolbox.generate_training_script({})
-                response["data"] = {"code": script, "language": "python"}
-                response["tools_used"].append("TrainingScriptGenerator")
-                response["reply"] = "I have generated a PyTorch training loop optimized for the DUKE architecture."
-            else:
-                response["action_type"] = "conversation"
-                response["reply"] = "I can help with training loops, loss functions, and gradients. What do you need?"
+            response["action_type"] = "conversation"
+            response["reply"] = "I can help with training loops, loss functions, and gradients. What do you need?"
 
         # --- BACKEND/DEV PATH ---
         elif target_persona == "BACKEND_DEV":
@@ -122,17 +139,26 @@ async def agency_dispatch(req: DispatchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/tools/analyze_code")
+@router.post("/tools/analyze_code", dependencies=[Depends(require_admin_secret)])
 async def tool_analyze_code(req: ToolRequest):
-    """Direct access to CodeReader tool"""
-    return CodeReader.analyze_structure(req.code)
+    """CodeReader (tools/agent_toolkit.py) only reads files by path
+    (read_file/list_structure) - there's no real "analyze this code string"
+    capability implemented, unlike what this endpoint used to claim by
+    calling a CodeReader.analyze_structure() that never existed (it would
+    only "work" by accidentally hitting the import-failure fallback mock).
+    Honest not-implemented response instead of a fabricated one."""
+    return {"status": "not_implemented", "message": "Code-structure analysis isn't implemented yet."}
 
-@router.post("/tools/security_scan")
+@router.post("/tools/security_scan", dependencies=[Depends(require_admin_secret)])
 async def tool_security_scan(req: ToolRequest):
-    """Direct access to SecurityScanner tool"""
-    return SecurityScanner.scan(req.code)
+    """Direct access to the real SecurityScanner.scan_source()."""
+    return _security_scanner.scan_source(req.code)
 
-@router.post("/tools/generate_train_script")
+@router.post("/tools/generate_train_script", dependencies=[Depends(require_admin_secret)])
 async def tool_gen_script(config: TrainConfigRequest):
-    """Direct access to MLToolbox"""
-    return {"code": MLToolbox.generate_training_script(config.dict())}
+    """MLToolbox (tools/agent_toolkit.py) only inspects saved model weights
+    (inspect_weights) - there's no real training-script generator
+    implemented, unlike what this endpoint used to claim by calling a
+    MLToolbox.generate_training_script() that never existed. Honest
+    not-implemented response instead of a fabricated one."""
+    return {"status": "not_implemented", "message": "Training-script generation isn't implemented yet."}

@@ -48,16 +48,22 @@ def _assert_no_duplicate_routes(app: FastAPI) -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="AICP Coordinator", lifespan=lifespan)
 
-    # ==================== CORS CONFIGURATION (FIXED) ====================
-    # Define all trusted origins (Local + Production)
+    # ==================== CORS CONFIGURATION ====================
+    # SECURITY FIX: the "*" previously in this list (marked "TEMPORARY" by
+    # whoever added it, never removed) combined with allow_credentials=True
+    # below is a real vulnerability, not just a lint nitpick - Starlette's
+    # CORSMiddleware responds to "*" in allow_origins by reflecting back
+    # whatever Origin header the request actually sent, which satisfies
+    # browsers' credentialed-CORS check and effectively allows ANY website
+    # to make credentialed requests to this API. Only real, intended
+    # origins are listed now.
     origins = [
-        "http://localhost:3000",                # Your local frontend (React)
+        "http://localhost:3000",                # Local frontend dev
         "http://127.0.0.1:3000",                # Alternate local address
-        "https://www.labeele.ai",               # Your production domain
+        "https://www.labeele.ai",               # Production domain
         "https://labeele.ai",                   # Root domain
         "https://labeele-ai-web.vercel.app",    # Vercel deployments
         "https://huggingface.co",               # Hugging Face internal calls
-        "*"                                     # TEMPORARY: Allow all to ensure it works
     ]
 
     app.add_middleware(

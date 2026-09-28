@@ -33,7 +33,7 @@ async def get_iac_statistics(db: Session = Depends(get_db)):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@router.post("/iac/test", tags=["IAC System"])
+@router.post("/iac/test", tags=["IAC System"], dependencies=[Depends(require_admin_secret)])
 async def test_iac_validation(request: dict):
     prompt = request.get("prompt", "")
     persona = request.get("persona", "security-expert")

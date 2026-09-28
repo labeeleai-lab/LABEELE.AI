@@ -4,3 +4,8 @@ __pycache__/
 *.db
 *.log
 labeele_duke/
+# Runtime-generated dev data (mirrors the persistent /data bucket used in
+# production - see core/accounts_db.py, core/config.get_persistent_data_dir):
+# local training memory, feedback logs, etc. None of this is source code
+# and none of it should ever land in git history.
+data/
