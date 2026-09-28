@@ -345,14 +345,16 @@ export default function AdminTrainingPage() {
         <GlassCard>
           <h2 className="font-semibold text-white mb-2">Retrain agents</h2>
           <p className="text-gray-400 text-sm mb-3">
-            Runs a real training pass: filters out error responses, too-short answers, duplicates,
-            and anything rated 1-2 stars in Annotate; splits what&apos;s left 85/15 into train/validation
-            sets; and stops early once validation stops improving, rather than training a fixed
-            number of epochs regardless of overfitting.
+            Really LoRA fine-tunes DUKE&apos;s actual answer-generating model (Qwen2.5) on your
+            collected data: filters out error responses, too-short answers, duplicates, and anything
+            rated 1-2 stars in Annotate; splits what&apos;s left 85/15 into train/validation sets;
+            and stops early once validation stops improving. The result is merged in and takes
+            effect immediately, with no restart needed.
           </p>
           <p className="text-gray-500 text-xs mb-5">
-            Separate from the offline LoRA fine-tune script (<code>train_duke_offline.py</code>),
-            which runs as its own standalone GPU job and can&apos;t be triggered from here.
+            Runs on this CPU-only server, so a training run can take a while depending on how much
+            data there is - the live panel below shows real progress while it runs, not just a
+            spinner.
           </p>
           <ConfirmButton label="Retrain agents" confirmLabel="Click again to confirm" icon={RefreshCw} onConfirm={handleRetrain} />
         </GlassCard>
@@ -699,10 +701,11 @@ export default function AdminTrainingPage() {
         <Info className="w-4 h-4 shrink-0 mt-0.5 text-gray-500" />
         <div>
           <strong className="text-gray-300">Not shown, on purpose:</strong> GPU metrics beyond utilization (no GPU
-          exists on this deployment), precision/recall/F1/perplexity/benchmark scores (this training pipeline measures
-          validation accuracy via cosine similarity, not classification metrics), and per-agent
-          online/synchronizing/updating states (every agent is served by one shared backend process, not
-          independent services that can be in those states). These are left out rather than shown with invented numbers.
+          exists on this deployment), and per-agent online/synchronizing/updating states (every agent is served by
+          one shared backend process, not independent services that can be in those states). &quot;Validation accuracy&quot;
+          is derived from real held-out cross-entropy loss (e^-loss, the model&apos;s average per-token probability
+          on data it wasn&apos;t trained on) - a genuine, standard language-model metric, but not the same thing as
+          classification accuracy. These are left out or labeled honestly rather than shown with invented numbers.
         </div>
       </div>
     </AdminShell>

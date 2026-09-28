@@ -28,6 +28,7 @@ from coordinator_API.models.schemas import (
     TrainingUploadRequest, TrainingUploadResponse, ModelVersionSummary,
 )
 from coordinator_API.ml.pipeline import duke_pipeline
+from coordinator_API.ml import finetune
 
 router = APIRouter()
 
@@ -151,9 +152,13 @@ async def clear_training_cache(db: Session = Depends(get_db)):
 
 @router.post("/admin/retrain-agents", dependencies=[Depends(require_admin_secret)])
 async def retrain_all_agents(db: Session = Depends(get_db)):
+    """Real LoRA fine-tuning of DUKE's actual answer-generating model (see
+    ml/finetune.py) - replaces the old call into ml/pipeline.py's
+    duke_pipeline.train_model(), which trained a disconnected embedding
+    regressor with no effect on real answers. duke_pipeline itself is left
+    running (other endpoints below still read its stats)."""
     try:
-        duke_pipeline.model = None
-        result = await duke_pipeline.train_model(db)
+        result = await finetune.run_finetune(db)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -163,7 +168,7 @@ async def retrain_all_agents(db: Session = Depends(get_db)):
 async def get_training_progress():
     """Live epoch-by-epoch state of whatever training run is (or was last) in
     progress - polled by the JIREH training page while a retrain is running."""
-    return duke_pipeline.progress
+    return finetune.progress
 
 
 @router.get(

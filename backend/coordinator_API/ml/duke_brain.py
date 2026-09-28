@@ -29,7 +29,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from google import genai
 
-from coordinator_API.core.config import APP_DIR
+from coordinator_API.core.config import APP_DIR, get_persistent_data_dir
 
 # The SDK automatically checks for os.environ.get("GOOGLE_API_KEY")
 # or os.environ.get("GEMINI_API_KEY").
@@ -90,18 +90,26 @@ class DukeGenerativeBrain:
 
     def _initialize_local_model(self, model_name):
         """Load DUKE's base model, falling back to a tiny emergency model if that fails."""
+        # A previous real LoRA fine-tune (see ml/finetune.py, triggered by
+        # POST /admin/retrain-agents) saves its merged result here, in the
+        # Space's persistent Storage Bucket - load that instead of the
+        # stock base model if one exists, so training survives restarts.
+        finetuned_dir = get_persistent_data_dir("duke_finetuned_model")
+        has_finetuned = os.path.isdir(finetuned_dir) and len(os.listdir(finetuned_dir)) > 0
+        load_path = finetuned_dir if has_finetuned else model_name
+
         try:
-            print(f"📦 Loading Duke Brain from {model_name}")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            print(f"📦 Loading Duke Brain from {load_path}")
+            self.tokenizer = AutoTokenizer.from_pretrained(load_path)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
             self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
+                load_path,
                 torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32
             ).to(self.device)
             self.model.eval()
-            self.mode = "instruct"
+            self.mode = "fine-tuned" if has_finetuned else "instruct"
 
         except Exception as e:
             print(f"❌ Critical Local Load Error: {e}")

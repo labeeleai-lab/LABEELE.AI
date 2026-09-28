@@ -110,3 +110,18 @@ try:
 except Exception as e:
     logger.error(f"❌ Configuration initialization failed: {e}")
     raise RuntimeError(f"Failed to initialize DUKE configuration: {e}")
+
+
+def get_persistent_data_dir(subdir: str) -> str:
+    """Same persistent-storage detection as core/accounts_db.py: prefers the
+    Hugging Face Space's mounted Storage Bucket at /data (survives restarts)
+    and falls back to APP_DIR/data locally. Callers that write anything they
+    need to survive a Space restart (fine-tuned checkpoints, in this case)
+    must use this instead of duke_config's DUKE_CHECKPOINT_DIR, which lives
+    on the container's ephemeral filesystem unless CHECKPOINT_DIR is
+    explicitly set."""
+    persistent_root = "/data"
+    base = persistent_root if os.path.isdir(persistent_root) and os.access(persistent_root, os.W_OK) else os.path.join(str(APP_DIR), "data")
+    path = os.path.join(base, subdir)
+    os.makedirs(path, exist_ok=True)
+    return path
