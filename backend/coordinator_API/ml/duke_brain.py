@@ -67,64 +67,46 @@ def safe_generate(prompt: str):
 
 
 class DukeGenerativeBrain:
-    def __init__(self, model_name="distilgpt2"):
+    # Qwen2.5-1.5B-Instruct (2024) replaces TinyLlama-1.1B-Chat (2023) as of
+    # this upgrade - live testing throughout this project repeatedly showed
+    # TinyLlama ignoring given context and getting basic reasoning wrong
+    # (see core/math_solver.py, core/grounding.py, core/extractive_qa.py -
+    # all exist specifically because this class's model couldn't be trusted
+    # with those tasks). The old duke_chat_brain checkpoint (a fine-tune of
+    # TinyLlama's specific architecture) is not compatible with a different
+    # base model's weight shapes, so it's retired along with TinyLlama
+    # rather than loaded against a mismatched architecture - Qwen runs with
+    # its own general instruction-tuning until/unless a new fine-tune is
+    # trained on this base model.
+    def __init__(self, model_name="Qwen/Qwen2.5-1.5B-Instruct"):
         # 1. Hardware Detection
         self.device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
         print(f"🧠 Initializing Duke's Generative Brain on {self.device}...")
 
         self.mode = "student"  # Default mode
-
-        # Local-only brain: fine-tuned TinyLlama, no external AI APIs.
-        # APP_DIR fix: was os.path.dirname(os.path.abspath(__file__)), which
-        # assumed __file__ was coordinator_api.py's own location.
-        base_dir = str(APP_DIR)
-        self.model_path = os.path.join(base_dir, "labeele_duke", "duke_chat_brain")
         self.model = None
         self.tokenizer = None
         self._initialize_local_model(model_name)
 
     def _initialize_local_model(self, model_name):
-        """Load the fine-tuned Duke chat model, falling back to the base model if untrained."""
-        has_weights = os.path.exists(self.model_path) and len(os.listdir(self.model_path)) > 0
-
-        # On a fresh deploy (e.g. the HF Space) the 2.2GB checkpoint won't be
-        # in the git-based deploy - it's pulled from the dedicated weights
-        # repo instead, matching the existing 'origin' remote convention.
-        if not has_weights:
-            try:
-                from huggingface_hub import snapshot_download
-                print("📥 No local checkpoint - downloading Duke Brain from LABEELEA1/Duke-Weights-Internal...")
-                downloaded = snapshot_download(
-                    repo_id="LABEELEA1/Duke-Weights-Internal",
-                    allow_patterns=["duke_chat_brain/*"],
-                    token=os.getenv("HF_TOKEN"),
-                )
-                candidate = os.path.join(downloaded, "duke_chat_brain")
-                if os.path.exists(candidate) and len(os.listdir(candidate)) > 0:
-                    self.model_path = candidate
-                    has_weights = True
-                    print(f"✅ Downloaded Duke Brain to {candidate}")
-            except Exception as e:
-                print(f"⚠️ Could not download Duke Brain checkpoint ({e}). Using base model.")
-
-        load_path = self.model_path if has_weights else "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-
+        """Load DUKE's base model, falling back to a tiny emergency model if that fails."""
         try:
-            print(f"📦 Loading Duke Brain from {load_path}")
-            self.tokenizer = AutoTokenizer.from_pretrained(load_path)
+            print(f"📦 Loading Duke Brain from {model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
             self.model = AutoModelForCausalLM.from_pretrained(
-                load_path,
+                model_name,
                 torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32
             ).to(self.device)
             self.model.eval()
-            self.mode = "graduate" if has_weights else "student"
+            self.mode = "instruct"
 
         except Exception as e:
             print(f"❌ Critical Local Load Error: {e}")
             try:
+                print("⚠️ Falling back to distilgpt2 (emergency fallback only)")
                 self.tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
                 self.model = AutoModelForCausalLM.from_pretrained("distilgpt2").to(self.device)
                 self.mode = "student"
@@ -145,8 +127,26 @@ class DukeGenerativeBrain:
             # (e.g. "how many days until...") aren't computed from whatever
             # date happened to show up in training data.
             today_str = datetime.now().strftime('%Y-%m-%d')
-            chat_prompt = f"<|user|>\nToday's date is {today_str}.\n{prompt}</s>\n<|assistant|>\n"
-            inputs = self.tokenizer(chat_prompt, return_tensors="pt").to(self.device)
+            # apply_chat_template() builds whichever special-token format
+            # the loaded model actually expects (ChatML for Qwen, ones for
+            # other model families) - a hardcoded template string here was
+            # TinyLlama-specific and would silently miscommunicate with any
+            # other model, degrading answer quality without ever raising an
+            # error.
+            messages = [
+                {"role": "system", "content": f"Today's date is {today_str}."},
+                {"role": "user", "content": prompt},
+            ]
+            try:
+                chat_prompt = self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception:
+                # Emergency-fallback models (distilgpt2) have no chat
+                # template at all - plain concatenation is the best this
+                # non-instruct model could use anyway.
+                chat_prompt = f"Today's date is {today_str}.\n{prompt}\n"
+            inputs = self.tokenizer(chat_prompt, return_tensors="pt", add_special_tokens=False).to(self.device)
 
             with torch.no_grad():
                 outputs = self.model.generate(
