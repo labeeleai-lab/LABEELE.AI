@@ -101,6 +101,38 @@ async def upload_knowledge(payload: KnowledgeUploadRequest, db: Session = Depend
     return KnowledgeUploadResponse(source_id=source_id, chunks_created=len(chunks), total_characters=len(text))
 
 
+@router.post(
+    "/admin/knowledge/reindex",
+    tags=["Knowledge"],
+    dependencies=[Depends(require_admin_secret)],
+)
+async def reindex_knowledge(db: Session = Depends(get_db)):
+    """Re-embeds every existing KnowledgeChunk with whatever embedding model
+    is currently configured (see knowledge.EMBED_MODEL_NAME). Needed any
+    time that model changes - old rows' vectors live in the old model's
+    vector space, so comparing them against new queries embedded with a
+    different model would silently produce meaningless similarity scores."""
+    rows = db.query(KnowledgeChunk).all()
+    if not rows:
+        return {"status": "success", "reembedded": 0, "model": knowledge_lib.EMBED_MODEL_NAME}
+
+    batch_size = 64
+    reembedded = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        try:
+            vectors = knowledge_lib.embed_chunks([r.content for r in batch])
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        for row, vector in zip(batch, vectors):
+            row.embedding = vector
+            reembedded += 1
+        db.commit()
+
+    logger.info(f"✅ Knowledge reindex complete: {reembedded} chunk(s) re-embedded with {knowledge_lib.EMBED_MODEL_NAME}")
+    return {"status": "success", "reembedded": reembedded, "model": knowledge_lib.EMBED_MODEL_NAME}
+
+
 @router.get(
     "/admin/knowledge",
     response_model=List[KnowledgeSourceSummary],

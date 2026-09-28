@@ -18,7 +18,14 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-EMBED_MODEL_NAME = os.getenv("KNOWLEDGE_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+# BAAI/bge-small-en-v1.5 (2023) replaces all-MiniLM-L6-v2 (2021) - a
+# meaningfully stronger retrieval embedding model (higher MTEB retrieval
+# scores) at the same 384 dimensions, so KNOWLEDGE_EMBED_DIM in models/orm.py
+# needs no change. BGE's own docs recommend an asymmetric setup: queries get
+# an instruction prefix, documents/chunks don't - see _BGE_QUERY_PREFIX below
+# and how embed_query() uses it but embed_chunks() doesn't.
+EMBED_MODEL_NAME = os.getenv("KNOWLEDGE_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+_BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 DEFAULT_TOP_K = int(os.getenv("KNOWLEDGE_TOP_K", "4"))
 DEFAULT_SIM_THRESHOLD = float(os.getenv("KNOWLEDGE_SIM_THRESHOLD", "0.35"))
 
@@ -62,7 +69,9 @@ def embed_chunks(texts: list[str]) -> list[np.ndarray]:
 
 
 def embed_query(text: str) -> np.ndarray:
-    return embed_chunks([text])[0]
+    """Queries get BGE's recommended search-instruction prefix; documents
+    (embed_chunks) deliberately don't - matching BAAI's documented usage."""
+    return embed_chunks([_BGE_QUERY_PREFIX + text])[0]
 
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
