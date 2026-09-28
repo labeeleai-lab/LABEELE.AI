@@ -313,10 +313,33 @@ async def run_finetune(db: Session) -> dict:
         # as such wherever it's displayed.
         validation_accuracy = math.exp(-best_val_loss) if best_val_loss != float("inf") else None
 
+        logger.info(
+            f"✅ DUKE fine-tuned & deployed (LoRA r=8, epochs: {epochs_run}, "
+            f"val_loss: {best_val_loss:.4f})"
+        )
+
+    except Exception as e:
+        # Anything up to here is the actual training compute - a failure
+        # means the model was NOT successfully retrained, so this really is
+        # an error.
+        logger.error(f"❌ DUKE fine-tuning failed: {e}")
+        progress.update({"status": "error", "message": str(e)})
+        raise
+
+    # The model is already merged, live-swapped into brain.model, and saved
+    # to persistent disk at this point - real success, independent of
+    # whether recording it in the dashboard's history table below works.
+    # A long training run (this one routinely runs 10-20+ minutes) can
+    # outlast a database connection's idle timeout on a managed provider
+    # (see core/db.py's pool_pre_ping/pool_recycle, added after exactly
+    # this happened live), so this bookkeeping write is deliberately
+    # best-effort and must never make a successful run report as "error".
+    version_number = None
+    try:
         latest = db.query(ModelVersionBase).order_by(desc(ModelVersionBase.version_number)).first()
         version_number = (latest.version_number if latest else 0) + 1
 
-        model_version = ModelVersionBase(
+        db.add(ModelVersionBase(
             id=str(uuid.uuid4()),
             version_number=version_number,
             training_samples=len(quality_samples),
@@ -331,34 +354,31 @@ async def run_finetune(db: Session) -> dict:
                 "best_val_loss": best_val_loss,
                 **stats,
             },
-        )
-        db.add(model_version)
+        ))
         db.commit()
-
-        logger.info(
-            f"✅ DUKE fine-tuned & deployed (LoRA r=8, epochs: {epochs_run}, "
-            f"val_loss: {best_val_loss:.4f}, model v{version_number})"
-        )
-
-        progress.update({
-            "status": "complete",
-            "message": f"Fine-tuning complete - model v{version_number} deployed.",
-            "model_version": version_number,
-            "validation_accuracy": validation_accuracy,
-        })
-
-        return {
-            "status": "success",
-            "model_version": version_number,
-            "epochs_run": epochs_run,
-            "train_samples": len(train_set),
-            "val_samples": len(val_set),
-            "validation_accuracy": validation_accuracy,
-            "best_val_loss": best_val_loss,
-            **stats,
-        }
-
     except Exception as e:
-        logger.error(f"❌ DUKE fine-tuning failed: {e}")
-        progress.update({"status": "error", "message": str(e)})
-        raise
+        logger.error(f"⚠️ Fine-tune succeeded but recording it to model_versions failed: {e}")
+        db.rollback()
+        version_number = None
+
+    progress.update({
+        "status": "complete",
+        "message": (
+            f"Fine-tuning complete - model v{version_number} deployed."
+            if version_number is not None
+            else "Fine-tuning complete and deployed (history bookkeeping failed to save - see server logs)."
+        ),
+        "model_version": version_number,
+        "validation_accuracy": validation_accuracy,
+    })
+
+    return {
+        "status": "success",
+        "model_version": version_number,
+        "epochs_run": epochs_run,
+        "train_samples": len(train_set),
+        "val_samples": len(val_set),
+        "validation_accuracy": validation_accuracy,
+        "best_val_loss": best_val_loss,
+        **stats,
+    }
