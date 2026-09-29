@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from coordinator_API.core.config import logger, get_training_stats
 from coordinator_API.core.db import get_db
 from coordinator_API.core.security import require_admin_secret
+import coordinator_API.core.state as state
 from coordinator_API.models.orm import Agent, ModelVersionBase, TrainingData
 from coordinator_API.personas.specialists import SPECIALIST_PERSONAS
 from coordinator_API.models.schemas import (
@@ -151,17 +152,22 @@ async def clear_training_cache(db: Session = Depends(get_db)):
     return {"status": "success", "deleted_entries": count}
 
 @router.post("/admin/retrain-agents", dependencies=[Depends(require_admin_secret)])
-async def retrain_all_agents(db: Session = Depends(get_db)):
+async def retrain_all_agents():
     """Real LoRA fine-tuning of DUKE's actual answer-generating model (see
     ml/finetune.py) - replaces the old call into ml/pipeline.py's
     duke_pipeline.train_model(), which trained a disconnected embedding
     regressor with no effect on real answers. duke_pipeline itself is left
-    running (other endpoints below still read its stats)."""
-    try:
-        result = await finetune.run_finetune(db)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    running (other endpoints below still read its stats).
+
+    Starts the run in the background and returns immediately - a run takes
+    10-20+ minutes, far past the admin proxy's 60s timeout. The Training page
+    follows it via /admin/training/progress (final outcome in "result")."""
+    if finetune.is_running():
+        raise HTTPException(status_code=409, detail="A training run is already in progress.")
+    if not state.duke_brain or not state.duke_brain.model:
+        raise HTTPException(status_code=503, detail="Duke Brain is not initialized.")
+    finetune.start_finetune()
+    return {"status": "started"}
 
 
 @router.get("/admin/training/progress", dependencies=[Depends(require_admin_secret)])

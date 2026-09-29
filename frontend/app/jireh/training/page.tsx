@@ -256,30 +256,39 @@ export default function AdminTrainingPage() {
     })
 
     stopProgressPolling()
-    progressTimerRef.current = setInterval(() => {
-      dukeApi.trainingProgress().then(setTrainingProgress, () => {})
-    }, 700)
 
     try {
-      const result = await dukeApi.retrainAgents()
-      setRetrainResult(result)
-      if (result.status === 'skipped') {
-        setNotice({
-          type: 'error',
-          message: `Skipped - only ${result.usable_samples} usable sample(s) after quality filtering (need 10+).`,
-        })
-      } else {
-        setNotice({ type: 'success', message: `Training run complete - model v${result.model_version}.` })
-      }
-      refresh()
+      // The backend only starts the run here and answers immediately - a run
+      // takes 10-20+ minutes, far past any request timeout - so the outcome
+      // comes from polling progress until it reaches a final state.
+      await dukeApi.retrainAgents()
     } catch (err) {
       setNotice({ type: 'error', message: err instanceof DukeApiError ? err.message : 'Failed to trigger retraining.' })
-    } finally {
-      // One last poll so the panel settles on the true final state (e.g.
-      // "complete") instead of freezing on whatever the last interval tick caught.
       dukeApi.trainingProgress().then(setTrainingProgress, () => {})
-      stopProgressPolling()
+      return
     }
+
+    progressTimerRef.current = setInterval(() => {
+      dukeApi.trainingProgress().then((progress) => {
+        setTrainingProgress(progress)
+        if (progress.status === 'complete' || progress.status === 'skipped' || progress.status === 'error') {
+          stopProgressPolling()
+          const result = progress.result
+          if (result) setRetrainResult(result)
+          if (progress.status === 'error') {
+            setNotice({ type: 'error', message: `Training failed: ${progress.message}` })
+          } else if (progress.status === 'skipped') {
+            setNotice({
+              type: 'error',
+              message: `Skipped - only ${progress.usable_samples} usable sample(s) after quality filtering (need 10+).`,
+            })
+          } else {
+            setNotice({ type: 'success', message: progress.message })
+          }
+          refresh()
+        }
+      }, () => {})
+    }, 3000)
   }
 
   const handleClearCache = async () => {

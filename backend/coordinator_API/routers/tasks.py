@@ -48,6 +48,24 @@ import knowledge as knowledge_lib
 router = APIRouter()
 
 
+# Generation runs in a worker thread (asyncio.to_thread) - calling the model
+# directly inside the async handler froze the whole server for the length of
+# every answer, so concurrent /health, /agents and dashboard polls hung until
+# the Vercel proxies timed out with 502s. state.model_lock keeps generation
+# from running mid fine-tune (ml/finetune.py); returns None if the model stays
+# busy past the wait, well inside the /api/duke proxy's 90s timeout.
+GENERATION_LOCK_WAIT_SECONDS = 30
+
+
+def _generate_with_lock(prompt: str):
+    if not state.model_lock.acquire(timeout=GENERATION_LOCK_WAIT_SECONDS):
+        return None
+    try:
+        return state.duke_brain.generate_response(prompt)
+    finally:
+        state.model_lock.release()
+
+
 # ✅ CREATE TASK ENDPOINT (legacy JWT)
 @router.post("/api/tasks")
 async def create_task(task: TaskCreate, request: Request):
@@ -314,10 +332,14 @@ async def submit_task(
                 prompt += question_suffix
 
                 if state.duke_brain and state.duke_brain.model is not None:
-                    raw_response = state.duke_brain.generate_response(prompt)
-                    final_response = f"⚡ [DUKE-LOCAL]: {raw_response}"
-                    response_source = "duke_local"
-                    logger.info("🧠 Duke processed task successfully on Local/GPU.")
+                    raw_response = await asyncio.to_thread(_generate_with_lock, prompt)
+                    if raw_response is None:
+                        final_response = ("Error: DUKE is busy right now (most likely a training run is in "
+                                          "progress). Please try again in a few minutes.")
+                    else:
+                        final_response = f"⚡ [DUKE-LOCAL]: {raw_response}"
+                        response_source = "duke_local"
+                        logger.info("🧠 Duke processed task successfully on Local/GPU.")
                 else:
                     final_response = "Error: Duke Brain is not initialized."
             except Exception as duke_error:

@@ -61,6 +61,7 @@ progress = {
     "history": [],
     "model_version": None,
     "validation_accuracy": None,
+    "result": None,  # final run_finetune() return value, set once a background run ends
 }
 
 
@@ -159,8 +160,10 @@ def _build_labeled_example(tokenizer, instruction: str, output: str):
     return full_ids, labels
 
 
-async def _run_epoch(peft_model, tokenizer, examples, optimizer=None) -> float:
-    """optimizer=None runs in eval/no-grad mode (validation); otherwise trains."""
+def _run_epoch(peft_model, tokenizer, examples, optimizer=None) -> float:
+    """optimizer=None runs in eval/no-grad mode (validation); otherwise trains.
+    Plain blocking code - only ever called from _train_merge_save(), which
+    runs in a worker thread."""
     training = optimizer is not None
     peft_model.train() if training else peft_model.eval()
 
@@ -177,7 +180,6 @@ async def _run_epoch(peft_model, tokenizer, examples, optimizer=None) -> float:
             optimizer.zero_grad()
             out = peft_model(input_ids=input_tensor, labels=label_tensor)
             if torch.isnan(out.loss):
-                await asyncio.sleep(0)
                 continue
             out.loss.backward()
             optimizer.step()
@@ -187,12 +189,119 @@ async def _run_epoch(peft_model, tokenizer, examples, optimizer=None) -> float:
 
         total_loss += out.loss.item()
         counted += 1
-        # Yield control so a concurrent progress poll (and other requests)
-        # can actually be served mid-run instead of the process appearing
-        # frozen until this whole coroutine returns.
-        await asyncio.sleep(0)
 
     return total_loss / counted if counted else 0.0
+
+
+def _train_merge_save(brain, train_set, val_set) -> tuple:
+    """All of the actual compute: LoRA training, merge, live swap, and save.
+
+    Runs in a worker thread (asyncio.to_thread) - NOT on the event loop.
+    Previously this ran inline in the request coroutine, with
+    `await asyncio.sleep(0)` between steps; that wasn't enough - every
+    forward/backward pass, and especially merge_and_unload() + writing the
+    multi-GB checkpoint to the Storage Bucket, blocked the whole server, so
+    every other request (/health, /agents, the dashboard's polls) hung until
+    the Vercel proxies gave up and returned 502s.
+
+    Holds state.model_lock throughout so no generation runs against the
+    model while it's wrapped in LoRA layers / in train mode. Mutating
+    `progress` from this thread is fine - the event loop only reads it."""
+    with state.model_lock:
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        )
+        peft_model = get_peft_model(brain.model, lora_config)
+        optimizer = torch.optim.AdamW(peft_model.parameters(), lr=LEARNING_RATE)
+
+        best_val_loss = float("inf")
+        best_state = None
+        patience_counter = 0
+        epochs_run = 0
+
+        for epoch in range(MAX_EPOCHS):
+            epochs_run = epoch + 1
+            random.shuffle(train_set)
+
+            train_loss = _run_epoch(peft_model, brain.tokenizer, train_set, optimizer)
+            val_loss = _run_epoch(peft_model, brain.tokenizer, val_set)
+
+            progress["epoch"] = epochs_run
+            progress["train_loss"] = train_loss
+            progress["val_loss"] = val_loss
+            progress["message"] = f"Training epoch {epochs_run} of up to {MAX_EPOCHS}..."
+
+            if val_loss < best_val_loss - 1e-4:
+                best_val_loss = val_loss
+                best_state = {k: v.clone() for k, v in peft_model.state_dict().items()}
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            progress["best_val_loss"] = best_val_loss
+            progress["history"].append({"epoch": epochs_run, "train_loss": train_loss, "val_loss": val_loss})
+
+            if patience_counter >= PATIENCE:
+                logger.info(f"⏹️ Early stopping at epoch {epochs_run} (no val improvement for {PATIENCE} epochs)")
+                progress["message"] = f"Early stopping at epoch {epochs_run} - no improvement for {PATIENCE} epochs."
+                break
+
+        if best_state is not None:
+            peft_model.load_state_dict(best_state)
+
+        progress["status"] = "saving"
+        progress["message"] = "Merging adapter into the base model and saving checkpoint..."
+
+        # Merge the LoRA deltas into the base weights and swap the result
+        # into live serving immediately - the next /tasks/submit call uses
+        # the newly trained model, no restart required. merge_and_unload()
+        # returns a plain model (no PEFT wrapper), so duke_brain.py's
+        # generate_response() needs no changes to keep working.
+        merged_model = peft_model.merge_and_unload()
+        merged_model.eval()
+        brain.model = merged_model
+
+        merged_model.save_pretrained(FINETUNED_MODEL_DIR)
+        brain.tokenizer.save_pretrained(FINETUNED_MODEL_DIR)
+
+    return epochs_run, best_val_loss
+
+
+def is_running() -> bool:
+    return progress["status"] in ("curating", "training", "saving")
+
+
+def start_finetune() -> None:
+    """Kick off a run in the background and return immediately. The request
+    that triggers training can't wait for it: a run takes 10-20+ minutes and
+    the admin proxy gives up after 60s. The Training page follows the run
+    via GET /admin/training/progress instead, and reads the final outcome
+    from progress["result"]."""
+    progress.update({
+        "status": "curating",
+        "message": "Reading training samples and filtering out low-quality data...",
+        "result": None,
+    })
+    asyncio.create_task(_run_finetune_background())
+
+
+async def _run_finetune_background() -> None:
+    db = SessionLocal()
+    try:
+        result = await run_finetune(db)
+        progress["result"] = result
+    except Exception as e:
+        # run_finetune already recorded status "error" for training failures;
+        # this also covers anything that failed before training started.
+        logger.error(f"❌ Background fine-tune run failed: {e}")
+        progress.update({"status": "error", "message": str(e)})
+    finally:
+        db.close()
 
 
 async def run_finetune(db: Session) -> dict:
@@ -209,11 +318,14 @@ async def run_finetune(db: Session) -> dict:
         "val_loss": None,
         "best_val_loss": None,
         "history": [],
+        "model_version": None,
         "validation_accuracy": None,
     })
-    await asyncio.sleep(0)
 
     quality_samples, stats = _curate_samples(db)
+    # Done with this session - training below runs 10-20+ minutes, and
+    # holding a pooled connection idle that long is what let Neon drop it.
+    db.close()
     progress["usable_samples"] = len(quality_samples)
     progress["total_samples"] = stats["total_samples_considered"]
 
@@ -241,71 +353,9 @@ async def run_finetune(db: Session) -> dict:
         "message": f"Training epoch 1 of up to {MAX_EPOCHS}...",
         "max_epochs": MAX_EPOCHS,
     })
-    await asyncio.sleep(0)
-
-    lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-    )
-    peft_model = get_peft_model(brain.model, lora_config)
-    optimizer = torch.optim.AdamW(peft_model.parameters(), lr=LEARNING_RATE)
-
-    best_val_loss = float("inf")
-    best_state = None
-    patience_counter = 0
-    epochs_run = 0
 
     try:
-        for epoch in range(MAX_EPOCHS):
-            epochs_run = epoch + 1
-            random.shuffle(train_set)
-
-            train_loss = await _run_epoch(peft_model, brain.tokenizer, train_set, optimizer)
-            val_loss = await _run_epoch(peft_model, brain.tokenizer, val_set)
-
-            progress["epoch"] = epochs_run
-            progress["train_loss"] = train_loss
-            progress["val_loss"] = val_loss
-            progress["message"] = f"Training epoch {epochs_run} of up to {MAX_EPOCHS}..."
-
-            if val_loss < best_val_loss - 1e-4:
-                best_val_loss = val_loss
-                best_state = {k: v.clone() for k, v in peft_model.state_dict().items()}
-                patience_counter = 0
-            else:
-                patience_counter += 1
-
-            progress["best_val_loss"] = best_val_loss
-            progress["history"].append({"epoch": epochs_run, "train_loss": train_loss, "val_loss": val_loss})
-            await asyncio.sleep(0)
-
-            if patience_counter >= PATIENCE:
-                logger.info(f"⏹️ Early stopping at epoch {epochs_run} (no val improvement for {PATIENCE} epochs)")
-                progress["message"] = f"Early stopping at epoch {epochs_run} - no improvement for {PATIENCE} epochs."
-                break
-
-        if best_state is not None:
-            peft_model.load_state_dict(best_state)
-
-        progress["status"] = "saving"
-        progress["message"] = "Merging adapter into the base model and saving checkpoint..."
-        await asyncio.sleep(0)
-
-        # Merge the LoRA deltas into the base weights and swap the result
-        # into live serving immediately - the next /tasks/submit call uses
-        # the newly trained model, no restart required. merge_and_unload()
-        # returns a plain model (no PEFT wrapper), so duke_brain.py's
-        # generate_response() needs no changes to keep working.
-        merged_model = peft_model.merge_and_unload()
-        merged_model.eval()
-        brain.model = merged_model
-
-        merged_model.save_pretrained(FINETUNED_MODEL_DIR)
-        brain.tokenizer.save_pretrained(FINETUNED_MODEL_DIR)
+        epochs_run, best_val_loss = await asyncio.to_thread(_train_merge_save, brain, train_set, val_set)
 
         # An honest "accuracy-like" score derived from real validation loss:
         # e^-loss is the model's average per-token probability on held-out
@@ -331,13 +381,10 @@ async def run_finetune(db: Session) -> dict:
     # to persistent disk at this point - real success, independent of
     # whether recording it in the dashboard's history table below works.
     #
-    # Deliberately opens a BRAND NEW session here instead of reusing the
-    # `db` argument: pool_pre_ping (core/db.py) only tests a connection
-    # when it's checked OUT of the pool, and this request's session
-    # checked its connection out once, at the very start, then held it
-    # idle through the entire 10-20+ minute training run - pre_ping never
-    # got a chance to catch it going stale, and this write failed the same
-    # way even after adding pre_ping/pool_recycle. A fresh session gets a
+    # Deliberately opens a BRAND NEW session here: pool_pre_ping (core/db.py)
+    # only tests a connection when it's checked OUT of the pool, so a
+    # session held idle through the whole 10-20+ minute training run never
+    # got its stale connection caught. A fresh session gets a
     # freshly-verified connection regardless of how long training took.
     version_number = None
     fresh_db = SessionLocal()

@@ -15,11 +15,19 @@ which would bind a stale None captured at import time and never see
 lifespan's later assignment.
 """
 import os
+import threading
 from datetime import datetime
 
 # Initialize as None globally; lifespan.py sets this to a real
 # DukeGenerativeBrain instance at startup (or leaves it None on failure).
 duke_brain = None
+
+# Guards duke_brain.model. Generation (routers/tasks.py) and fine-tuning
+# (ml/finetune.py) both run in worker threads via asyncio.to_thread so the
+# event loop stays free to serve /health, /agents, etc. - which means they
+# could now overlap, and a generation must never run mid-training (the model
+# is wrapped in live LoRA layers and in train mode at that point).
+model_lock = threading.Lock()
 
 # Active SSE connections tracking (see routers/health.py's /api/logs/stream
 # and /api/metrics/system).

@@ -136,6 +136,8 @@ export interface TrainingProgress {
   history: TrainingProgressPoint[]
   model_version: number | null
   validation_accuracy: number | null
+  // Final outcome of the last background run (set once it ends)
+  result?: RetrainResult | null
 }
 
 export interface DukeTask {
@@ -383,7 +385,8 @@ export const dukeApi = {
   trainingStats: () => adminRequest<TrainingStats>('/training/stats'),
 
   // Admin: training controls
-  retrainAgents: () => adminRequest<RetrainResult>('/admin/retrain-agents', { method: 'POST' }, 60_000),
+  // Only starts the run (it takes 10-20+ min) - follow it via trainingProgress().
+  retrainAgents: () => adminRequest<{ status: 'started' }>('/admin/retrain-agents', { method: 'POST' }),
   trainingProgress: () => adminRequest<TrainingProgress>('/admin/training/progress', {}, 8_000),
   clearTrainingCache: () => adminRequest<{ deleted: number }>('/admin/clear-cache', { method: 'POST' }),
   uploadTrainingData: (examples: TrainingExample[]) =>
