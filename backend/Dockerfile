@@ -33,4 +33,8 @@ ENV HOME=/home/user \
 EXPOSE 7860
 
 # 8. Start the API
-CMD ["uvicorn", "coordinator_api:app", "--host", "0.0.0.0", "--port", "7860"]
+# --timeout-keep-alive: uvicorn's default (5s) is shorter than the idle
+# timeout of Hugging Face's front proxy, which reuses kept-alive connections
+# uvicorn has already closed - showing up as instant, intermittent 502s
+# ("Sorry, there is an error on our side") on the dashboard.
+CMD ["uvicorn", "coordinator_api:app", "--host", "0.0.0.0", "--port", "7860", "--timeout-keep-alive", "75"]
