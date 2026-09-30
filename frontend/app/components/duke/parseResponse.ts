@@ -27,6 +27,13 @@ const PREFIX = /^\s*⚡\s*\[DUKE-LOCAL\]:\s*/
 const SOURCES = /\n\n📚 Sources:\s*(.+)\s*$/
 const NOTICE = /\n\nℹ️\s*(I couldn't find this in my knowledge base[\s\S]*)$/
 
+// Display names for knowledge sources: built-in starter notes are uploaded
+// as "seed-<persona>-NN", and file-derived names use underscores.
+function displaySource(name: string): string {
+  if (/^seed-/i.test(name)) return 'LABEELE.AI starter notes'
+  return name.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 export function parseResponse(raw: string, responseSource?: string, apiSources?: { source: string }[]): ParsedResponse {
   let body = (raw ?? '').replace(PREFIX, '')
   let sources: string[] = []
@@ -44,8 +51,9 @@ export function parseResponse(raw: string, responseSource?: string, apiSources?:
   }
   // Fallback for responses without the text footer (older backend builds)
   if (!sources.length && !notice && apiSources?.length) {
-    sources = Array.from(new Set(apiSources.map((x) => x.source.replace(/\s*\(part \d+ of \d+\)\s*$/i, '').trim())))
+    sources = apiSources.map((x) => x.source.replace(/\s*\(part \d+ of \d+\)\s*$/i, '').trim())
   }
+  sources = Array.from(new Set(sources.map(displaySource)))
 
   body = body.trim()
   let tone: ResponseTone = 'answer'

@@ -23,6 +23,19 @@ export interface DukeAgent {
   last_active: string
 }
 
+// A streamed answer or simplification in progress (GET /tasks/jobs/{id})
+export interface TaskJob {
+  // queued = waiting for DUKE to finish another request first
+  status: 'queued' | 'generating' | 'completed' | 'error'
+  text: string
+  done: boolean
+  response?: string
+  response_source?: string
+  sources?: { source: string; persona_id: string | null; similarity?: number }[]
+  request_id?: string
+  error?: string
+}
+
 export interface ModelStatus {
   status: 'ready' | 'training' | 'not_initialized'
   version: number
@@ -57,10 +70,15 @@ export interface SubmitTaskRequest {
   // Knowledge upload) - see backend/coordinator_API/core/document_qa.py.
   attachment_base64?: string
   attachment_name?: string
+  // Start generation in the background and return a job_id to poll
+  // (see waitForJob) instead of holding the request open for minutes
+  stream?: boolean
 }
 
 export interface SubmitTaskResponse {
-  response: string
+  // Absent when the answer is being streamed (job_id set instead)
+  response?: string
+  job_id?: string
   confidence: number
   agent_name: string
   request_id: string
@@ -374,10 +392,15 @@ export const dukeApi = {
     request<SubmitTaskResponse>(
       '/tasks/submit',
       { method: 'POST', body: JSON.stringify(body) },
-      // Complete answers on DUKE's CPU model can run past 90s; the
+      // Non-streamed answers on DUKE's CPU model can run past 90s; the
       // /api/duke proxy allows 180s too.
       180_000,
     ),
+
+  getJob: (jobId: string) => request<TaskJob>(`/tasks/jobs/${encodeURIComponent(jobId)}`, {}, 15_000),
+
+  simplify: (text: string) =>
+    request<{ job_id: string }>('/tasks/simplify', { method: 'POST', body: JSON.stringify({ text }) }, 30_000),
 
   dispatch: (body: DispatchRequest) =>
     request<DispatchResponse>(
@@ -466,4 +489,33 @@ export const dukeApi = {
   trainingHistory: () => adminRequest<ModelVersionSummary[]>('/admin/training/history'),
   systemResources: () => adminRequest<SystemResources>('/admin/system/resources'),
   dashboardSummary: () => adminRequest<DashboardSummary>('/admin/dashboard/summary'),
+}
+
+// Polls a streamed job until it finishes, reporting the text written so far.
+// Tolerates brief network/proxy blips (a few consecutive failed polls) but
+// not a lost job (404 - e.g. DUKE restarted mid-answer).
+export async function waitForJob(
+  jobId: string,
+  onProgress: (text: string, job: TaskJob) => void,
+  { intervalMs = 1000, maxConsecutiveFailures = 8 } = {},
+): Promise<TaskJob> {
+  let failures = 0
+  for (;;) {
+    try {
+      const job = await dukeApi.getJob(jobId)
+      failures = 0
+      onProgress(job.text, job)
+      if (job.done) {
+        if (job.status === 'error') throw new DukeApiError(job.error || 'DUKE could not finish this request.')
+        return job
+      }
+    } catch (err) {
+      if (err instanceof DukeApiError && /\(404\)/.test(err.message)) {
+        throw new DukeApiError('DUKE restarted while working on this, so the answer was lost. Please try again.')
+      }
+      if (err instanceof DukeApiError && !/\(5\d\d\)|timed out|Could not reach/.test(err.message)) throw err
+      if (++failures >= maxConsecutiveFailures) throw err
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
 }

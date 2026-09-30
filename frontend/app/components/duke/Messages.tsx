@@ -1,15 +1,28 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, Info, Paperclip, RotateCcw, XCircle } from 'lucide-react'
+import { AlertTriangle, BookOpen, Info, Paperclip, RotateCcw, Sparkles, XCircle } from 'lucide-react'
 import MarkdownMessage, { CopyButton } from './MarkdownMessage'
 import { getAgent, type DukeAgent } from './agents'
 import type { ParsedResponse } from './parseResponse'
 
+// Plain-language rewrite of an answer, created on demand by the toggle
+export type SimpleState = { status: 'loading' | 'done' | 'error'; text: string; error?: string }
+
 export type Turn =
   | { kind: 'user'; id: string; agentId: string; text: string; attachment?: string; at: Date }
-  | { kind: 'pending'; id: string; agentId: string; startedAt: number }
-  | { kind: 'assistant'; id: string; agentId: string; parsed: ParsedResponse; at: Date; seconds: number }
+  // partial = text streamed so far while DUKE is still writing
+  | { kind: 'pending'; id: string; agentId: string; startedAt: number; partial?: string; queued?: boolean }
+  | {
+      kind: 'assistant'
+      id: string
+      agentId: string
+      parsed: ParsedResponse
+      at: Date
+      seconds: number
+      simple?: SimpleState
+      showSimple?: boolean
+    }
   | { kind: 'error'; id: string; agentId: string; message: string; retryText: string }
 
 function AgentAvatar({ agent, size = 'md', className = '' }: { agent: DukeAgent; size?: 'sm' | 'md'; className?: string }) {
@@ -43,6 +56,46 @@ function RoleBadge({ agent }: { agent: DukeAgent }) {
 
 const time = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
+function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: () => void; label: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      disabled={disabled}
+      className="group inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+    >
+      <span
+        aria-hidden="true"
+        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border transition-colors duration-200 ${
+          checked ? 'border-gold-500 bg-gold-500' : 'border-white/20 bg-white/10 group-hover:border-white/30'
+        }`}
+      >
+        <span
+          className={`absolute h-3 w-3 rounded-full shadow transition-transform duration-200 ${
+            checked ? 'translate-x-[13px] bg-royal-blue-900' : 'translate-x-[1px] bg-gray-300'
+          }`}
+        />
+      </span>
+      {label}
+    </button>
+  )
+}
+
+function WritingSkeleton({ label }: { label: string }) {
+  return (
+    <div className="space-y-3" role="status">
+      <p className="text-sm text-gray-300">{label}</p>
+      <div className="space-y-2" aria-hidden="true">
+        <div className="shimmer-line h-2.5 w-[92%] animate-shimmer rounded-full" />
+        <div className="shimmer-line h-2.5 w-[78%] animate-shimmer rounded-full" />
+        <div className="shimmer-line h-2.5 w-[64%] animate-shimmer rounded-full" />
+      </div>
+    </div>
+  )
+}
+
 export function UserMessage({ turn }: { turn: Extract<Turn, { kind: 'user' }> }) {
   const agent = getAgent(turn.agentId)
   return (
@@ -64,9 +117,21 @@ export function UserMessage({ turn }: { turn: Extract<Turn, { kind: 'user' }> })
   )
 }
 
-export function AssistantMessage({ turn }: { turn: Extract<Turn, { kind: 'assistant' }> }) {
+export function AssistantMessage({
+  turn,
+  onToggleSimple,
+  onRetrySimple,
+}: {
+  turn: Extract<Turn, { kind: 'assistant' }>
+  onToggleSimple?: () => void
+  onRetrySimple?: () => void
+}) {
   const agent = getAgent(turn.agentId)
-  const { parsed } = turn
+  const { parsed, simple } = turn
+  // Only DUKE's own written answers get a plain-language version - not
+  // calculator results, file excerpts, warnings, or errors
+  const canSimplify = parsed.tone === 'answer' && !parsed.origin && !!onToggleSimple
+  const showSimple = canSimplify && !!turn.showSimple
   const toneFrame =
     parsed.tone === 'error'
       ? 'border-red-400/30'
@@ -103,6 +168,32 @@ export function AssistantMessage({ turn }: { turn: Extract<Turn, { kind: 'assist
               )}
               <p className="min-w-0 break-words">{parsed.body}</p>
             </div>
+          ) : showSimple ? (
+            <div>
+              <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gold-400">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Simple explanation
+              </p>
+              {simple?.status === 'error' ? (
+                <div className="alert alert-warning">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <div>
+                    <p>{simple.error ?? 'DUKE could not simplify this answer.'}</p>
+                    {onRetrySimple && (
+                      <button type="button" onClick={onRetrySimple} className="btn btn-secondary btn-sm mt-2">
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : simple?.text ? (
+                <div aria-live="polite" aria-busy={simple.status === 'loading'}>
+                  <MarkdownMessage content={simple.text} />
+                  {simple.status === 'loading' && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-gold-500/80 align-middle" aria-hidden="true" />}
+                </div>
+              ) : (
+                <WritingSkeleton label="Writing a simpler, non-technical version of this answer…" />
+              )}
+            </div>
           ) : (
             <MarkdownMessage content={parsed.body} />
           )}
@@ -132,7 +223,17 @@ export function AssistantMessage({ turn }: { turn: Extract<Turn, { kind: 'assist
                 <span>{parsed.notice}</span>
               </p>
             )}
-            {parsed.tone === 'answer' && <CopyButton text={parsed.body} label="Copy answer" className="ml-auto" />}
+            {parsed.tone === 'answer' && (
+              <div className="ml-auto flex items-center gap-1">
+                {canSimplify && (
+                  <Switch checked={showSimple} onChange={onToggleSimple!} label="Simple explanation" />
+                )}
+                <CopyButton
+                  text={showSimple && simple?.status === 'done' ? simple.text : parsed.body}
+                  label={showSimple ? 'Copy' : 'Copy answer'}
+                />
+              </div>
+            )}
           </footer>
         )}
       </div>
@@ -156,7 +257,7 @@ export function PendingMessage({ turn }: { turn: Extract<Turn, { kind: 'pending'
     : `Searching the ${agent.name}’s knowledge base and composing an answer`
 
   return (
-    <div className="flex animate-message-in gap-3" role="status" aria-live="polite">
+    <div className="flex animate-message-in gap-3" role="status" aria-label={`${agent.name} is writing a response`}>
       <AgentAvatar agent={agent} className="hidden sm:grid" />
       <div className="glass-raised min-w-0 flex-1 overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-white/5 px-4 py-2.5 sm:px-5">
@@ -173,19 +274,33 @@ export function PendingMessage({ turn }: { turn: Extract<Turn, { kind: 'pending'
           </span>
         </div>
         <div className="space-y-3 px-4 py-4 sm:px-5">
-          <p className="text-sm text-gray-300">
-            {status}
-            <span className="text-gray-500"> · {elapsed}s</span>
-          </p>
-          <div className="space-y-2" aria-hidden="true">
-            <div className="shimmer-line h-2.5 w-[92%] animate-shimmer rounded-full" />
-            <div className="shimmer-line h-2.5 w-[78%] animate-shimmer rounded-full" />
-            <div className="shimmer-line h-2.5 w-[64%] animate-shimmer rounded-full" />
-          </div>
-          {elapsed >= 20 && (
-            <p className="text-xs text-gray-500">
-              DUKE runs its own model on dedicated hardware - detailed answers can take a minute or two.
-            </p>
+          {turn.partial ? (
+            <>
+              <p className="text-xs text-gray-500">
+                Writing… <span aria-hidden="true">· {elapsed}s</span>
+              </p>
+              <div aria-busy="true">
+                <MarkdownMessage content={turn.partial} />
+                <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-gold-500/80 align-middle" aria-hidden="true" />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-300">
+                {turn.queued ? 'Waiting for DUKE to finish another request - yours is next in line' : status}
+                <span className="text-gray-500"> · {elapsed}s</span>
+              </p>
+              <div className="space-y-2" aria-hidden="true">
+                <div className="shimmer-line h-2.5 w-[92%] animate-shimmer rounded-full" />
+                <div className="shimmer-line h-2.5 w-[78%] animate-shimmer rounded-full" />
+                <div className="shimmer-line h-2.5 w-[64%] animate-shimmer rounded-full" />
+              </div>
+              {elapsed >= 20 && (
+                <p className="text-xs text-gray-500">
+                  DUKE runs its own model on dedicated hardware - the answer appears here as soon as it starts writing.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

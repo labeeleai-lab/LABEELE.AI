@@ -8,7 +8,7 @@ import Composer from '../components/duke/Composer'
 import { AGENTS, getAgent } from '../components/duke/agents'
 import { parseResponse } from '../components/duke/parseResponse'
 import { AgentAvatar, AssistantMessage, ErrorMessage, PendingMessage, UserMessage, type Turn } from '../components/duke/Messages'
-import { dukeApi, DukeApiError, type HealthStatus, type ModelStatus, type LearningStatus } from '@/lib/duke-api'
+import { dukeApi, DukeApiError, waitForJob, type HealthStatus, type ModelStatus, type LearningStatus } from '@/lib/duke-api'
 import { listRecentQueries, saveQuery, type AgentQuery } from '@/lib/query-history'
 
 function useBackendStatus() {
@@ -120,14 +120,34 @@ export default function DashboardPage() {
         buyer_id: userEmail ?? 'dashboard-user',
         attachment_base64,
         attachment_name,
+        stream: true,
       })
 
-      const response = data.response || 'No response received'
+      // Model answers come back as a job to follow while DUKE writes (no
+      // length or request-timeout ceiling on the answer); instant answers
+      // (calculator, date/time, file excerpts) come back complete.
+      let response = data.response
+      let responseSource = data.response_source
+      let sources = data.sources
+      if (data.job_id) {
+        const job = await waitForJob(data.job_id, (partial, progress) =>
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === pendingId && t.kind === 'pending' ? { ...t, partial, queued: progress.status === 'queued' } : t,
+            ),
+          ),
+        )
+        response = job.response
+        responseSource = job.response_source ?? responseSource
+        sources = job.sources ?? sources
+      }
+
+      response = response || 'No response received'
       finished = {
         kind: 'assistant',
         id: pendingId,
         agentId,
-        parsed: parseResponse(response, data.response_source, data.sources),
+        parsed: parseResponse(response, responseSource, sources),
         at: new Date(),
         seconds: (Date.now() - startedAt) / 1000,
       }
@@ -145,6 +165,34 @@ export default function DashboardPage() {
       }
     }
     setTurns((prev) => prev.map((t) => (t.id === pendingId ? finished : t)))
+  }
+
+  const updateAssistant = (id: string, patch: (t: Extract<Turn, { kind: 'assistant' }>) => Partial<Extract<Turn, { kind: 'assistant' }>>) =>
+    setTurns((prev) => prev.map((t) => (t.id === id && t.kind === 'assistant' ? { ...t, ...patch(t) } : t)))
+
+  // "Simple explanation" toggle: the plain-language version is written the
+  // first time it's switched on, then kept - toggling back and forth after
+  // that is instant.
+  const generateSimple = async (id: string, body: string) => {
+    updateAssistant(id, () => ({ showSimple: true, simple: { status: 'loading', text: '' } }))
+    try {
+      const { job_id } = await dukeApi.simplify(body)
+      const job = await waitForJob(job_id, (text) => updateAssistant(id, () => ({ simple: { status: 'loading', text } })))
+      updateAssistant(id, () => ({ simple: { status: 'done', text: job.response || job.text } }))
+    } catch (err) {
+      updateAssistant(id, () => ({
+        simple: { status: 'error', text: '', error: err instanceof DukeApiError ? err.message : 'DUKE could not simplify this answer.' },
+      }))
+    }
+  }
+
+  const toggleSimple = (turn: Extract<Turn, { kind: 'assistant' }>) => {
+    const next = !turn.showSimple
+    if (next && (!turn.simple || turn.simple.status === 'error')) {
+      generateSimple(turn.id, turn.parsed.body)
+    } else {
+      updateAssistant(turn.id, () => ({ showSimple: next }))
+    }
   }
 
   const statusOnline = health.data?.status === 'ok'
@@ -251,7 +299,14 @@ export default function DashboardPage() {
                     case 'pending':
                       return <PendingMessage key={turn.id} turn={turn} />
                     case 'assistant':
-                      return <AssistantMessage key={turn.id} turn={turn} />
+                      return (
+                        <AssistantMessage
+                          key={turn.id}
+                          turn={turn}
+                          onToggleSimple={() => toggleSimple(turn)}
+                          onRetrySimple={() => generateSimple(turn.id, turn.parsed.body)}
+                        />
+                      )
                     case 'error':
                       return (
                         <ErrorMessage
