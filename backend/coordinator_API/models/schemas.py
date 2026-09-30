@@ -67,6 +67,11 @@ class TaskResponse(BaseModel):
     completed_at: Optional[datetime] = None
     processing_time_seconds: Optional[float] = None
 
+class SimplifyRequest(BaseModel):
+    # The answer text to rewrite in plain language (dashboard toggle)
+    text: str = Field(..., min_length=1, max_length=20000)
+
+
 class TaskSubmission(BaseModel):
     description: str
     complexity: int = Field(..., ge=1, le=10)
@@ -82,6 +87,9 @@ class TaskSubmission(BaseModel):
     # so test questions never pollute training data or get stale cached
     # answers back, and returns which knowledge sources were retrieved.
     eval_mode: bool = False
+    # Start generation in the background and return a job_id to poll
+    # (GET /tasks/jobs/{job_id}) instead of holding the request open.
+    stream: bool = False
     model_config = {"populate_by_name": True}
 
     @field_validator("description")

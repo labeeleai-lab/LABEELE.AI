@@ -23,6 +23,7 @@ import asyncio
 import json
 import re
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -34,12 +35,12 @@ from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from coordinator_API.core.config import logger, APP_DIR, FEEDBACK_LOG_FILE
-from coordinator_API.core.db import get_db
+from coordinator_API.core.db import SessionLocal, get_db
 from coordinator_API.core.security import require_admin_secret, verify_token
 from coordinator_API.core import math_solver, grounding, web_fetch, document_qa, extractive_qa
 import coordinator_API.core.state as state
 from coordinator_API.models.orm import Agent, Task, TrainingData, PersonaConfig, KnowledgeChunk
-from coordinator_API.models.schemas import TaskCreate, TaskSubmission, TaskResponse, FeedbackSubmission
+from coordinator_API.models.schemas import TaskCreate, TaskSubmission, TaskResponse, FeedbackSubmission, SimplifyRequest
 from coordinator_API.personas.specialists import SPECIALIST_PERSONAS
 from coordinator_API.personas.resolver import get_safe_persona
 from coordinator_API.ml.matching import MatchingEngine
@@ -58,13 +59,157 @@ router = APIRouter()
 GENERATION_LOCK_WAIT_SECONDS = 30
 
 
-def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None):
-    if not state.model_lock.acquire(timeout=GENERATION_LOCK_WAIT_SECONDS):
-        return None
+def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None, on_text=None,
+                        wait_seconds: float = GENERATION_LOCK_WAIT_SECONDS, on_start=None):
+    """Returns (answer, hit_token_limit), or (None, False) if the model
+    stayed busy past the wait. on_start runs once the model is ours."""
+    if not state.model_lock.acquire(timeout=wait_seconds):
+        return None, False
     try:
-        return state.duke_brain.generate_response(prompt, system_prompt=system_prompt)
+        if on_start:
+            on_start()
+        answer = state.duke_brain.generate_response(prompt, system_prompt=system_prompt, on_text=on_text)
+        return answer, bool(getattr(state.duke_brain, "last_hit_token_limit", False))
     finally:
         state.model_lock.release()
+
+
+BUSY_MESSAGE = ("Error: DUKE is busy right now (most likely a training run is in "
+                "progress). Please try again in a few minutes.")
+LIMIT_NOTE = ("\n\n*This answer reached DUKE's maximum length and may be incomplete - "
+              "ask a narrower follow-up question for the rest.*")
+
+
+# ---- Streamed answers ----------------------------------------------------
+# A complete answer on this CPU deployment can take minutes - longer than a
+# single HTTP request can safely stay open behind the Vercel proxy. With
+# stream=true, /tasks/submit starts generation in the background and returns
+# a job_id immediately; the client polls GET /tasks/jobs/{job_id}, which
+# reports the text written so far until the job is done. In-memory is fine:
+# one replica, and a job only needs to outlive its own answer.
+_JOBS: dict = {}
+_JOB_TTL_SECONDS = 30 * 60
+# Background jobs aren't bound by an HTTP timeout, so they queue behind
+# whatever DUKE is writing instead of failing after 30s. Status is "queued"
+# until the model is theirs, then "generating".
+JOB_LOCK_WAIT_SECONDS = 10 * 60
+
+
+def _new_job(**fields) -> str:
+    now = time.time()
+    for jid in [j for j, v in _JOBS.items() if now - v["created"] > _JOB_TTL_SECONDS]:
+        _JOBS.pop(jid, None)
+    job_id = str(uuid.uuid4())
+    _JOBS[job_id] = {"status": "queued", "text": "", "done": False, "created": now, **fields}
+    return job_id
+
+
+def _record_task(db, task_data, target_agent, final_response, training_response):
+    """Persist a finished answer (Task + TrainingData + agent stats).
+    Returns (task_id, price). Shared by the synchronous and streamed paths."""
+    agent_record = db.query(Agent).filter(Agent.name == target_agent).first()
+    reputation = agent_record.reputation_multiplier if agent_record else 1.0
+    price = int(task_data.complexity * 1_000_000 * reputation)
+
+    task_id = str(uuid.uuid4())
+    db.add(Task(
+        id=task_id,
+        description=task_data.description,
+        agent_name=target_agent,
+        status="completed",
+        result=final_response,
+        complexity=task_data.complexity,
+        price_satoshis=price,
+        completed_at=datetime.now(timezone.utc),
+        buyer_id=task_data.buyer_id or "anon"
+    ))
+    db.add(TrainingData(
+        id=str(uuid.uuid4()),
+        task_id=task_id,
+        input_data=json.dumps({"description": task_data.description, "complexity": task_data.complexity}),
+        output_data=json.dumps({"result": training_response or final_response, "agent": target_agent}),
+        success=True,
+        agent_name=target_agent,
+        persona_type=target_agent
+    ))
+    if agent_record:
+        agent_record.total_tasks_completed += 1
+        agent_record.balance_satoshis += price
+    db.commit()
+    return task_id, price
+
+
+async def _run_answer_job(job_id, prompt, system_prompt, used_chunks, task_data, target_agent):
+    job = _JOBS[job_id]
+
+    def on_text(t):
+        job["text"] += t
+
+    def on_start():
+        job["status"] = "generating"
+
+    try:
+        raw, hit_limit = await asyncio.to_thread(
+            _generate_with_lock, prompt, system_prompt, on_text, JOB_LOCK_WAIT_SECONDS, on_start
+        )
+        training_response = None
+        if raw is None:
+            final_response, response_source = BUSY_MESSAGE, "unknown"
+        else:
+            final_response = f"⚡ [DUKE-LOCAL]: {raw}"
+            training_response = final_response
+            if hit_limit:
+                final_response += LIMIT_NOTE
+            final_response += _citation_footer(used_chunks)
+            response_source = "duke_local"
+
+        # The request's own DB session is long closed by now - use a fresh one
+        db = SessionLocal()
+        try:
+            task_id, price = _record_task(db, task_data, target_agent, final_response, training_response)
+        finally:
+            db.close()
+        job.update(done=True, status="completed", response=final_response,
+                   response_source=response_source, request_id=task_id, price_satoshis=price)
+    except Exception as e:
+        logger.error(f"❌ Streamed answer failed: {e}")
+        job.update(done=True, status="error", error="DUKE couldn't finish this answer. Please try again.")
+
+
+SIMPLIFY_SYSTEM = (
+    "You explain technical material to people with no technical background. "
+    "You are clear, warm, and accurate, and you never invent facts."
+)
+
+
+async def _run_simplify_job(job_id, text):
+    job = _JOBS[job_id]
+
+    def on_text(t):
+        job["text"] += t
+
+    prompt = (
+        "Rewrite the answer below for someone with no technical background.\n"
+        "- Use plain, everyday language and short sentences.\n"
+        "- Replace jargon with simple words, or explain a technical term in a few words the first time it is needed.\n"
+        "- Keep every key point and any steps, in the same order. Keep lists as lists.\n"
+        "- Do not add facts that are not in the original, and do not mention that this is a rewrite.\n\n"
+        f"Answer to rewrite:\n{text}"
+    )
+    def on_start():
+        job["status"] = "generating"
+
+    try:
+        raw, hit_limit = await asyncio.to_thread(
+            _generate_with_lock, prompt, SIMPLIFY_SYSTEM, on_text, JOB_LOCK_WAIT_SECONDS, on_start
+        )
+        if raw is None:
+            job.update(done=True, status="error", error=BUSY_MESSAGE.removeprefix("Error: "))
+            return
+        job.update(done=True, status="completed", response=raw + (LIMIT_NOTE if hit_limit else ""))
+    except Exception as e:
+        logger.error(f"❌ Simplify failed: {e}")
+        job.update(done=True, status="error", error="DUKE couldn't simplify this answer. Please try again.")
 
 
 # Total characters of knowledge-base passages placed in front of the model.
@@ -387,17 +532,28 @@ async def submit_task(
                 else:
                     prompt = question_block.lstrip()
 
+                if state.duke_brain and state.duke_brain.model is not None and task_data.stream and not task_data.eval_mode:
+                    job_id = _new_job(agent_name=target_agent, sources=retrieved_sources)
+                    asyncio.create_task(_run_answer_job(job_id, prompt, system_prompt, used_chunks, task_data, target_agent))
+                    return {
+                        "job_id": job_id,
+                        "status": "streaming",
+                        "agent_name": target_agent,
+                        "sources": retrieved_sources,
+                        "response_source": "duke_local",
+                    }
                 if state.duke_brain and state.duke_brain.model is not None:
-                    raw_response = await asyncio.to_thread(_generate_with_lock, prompt, system_prompt)
+                    raw_response, hit_limit = await asyncio.to_thread(_generate_with_lock, prompt, system_prompt)
                     if raw_response is None:
-                        final_response = ("Error: DUKE is busy right now (most likely a training run is in "
-                                          "progress). Please try again in a few minutes.")
+                        final_response = BUSY_MESSAGE
                     else:
                         final_response = f"⚡ [DUKE-LOCAL]: {raw_response}"
                         # Training data keeps the model's own words only - the
                         # footer below is added by code, and the model must not
                         # learn to write (and invent) citation lines itself.
                         training_response = final_response
+                        if hit_limit:
+                            final_response += LIMIT_NOTE
                         final_response += _citation_footer(used_chunks)
                         response_source = "duke_local"
                         logger.info("🧠 Duke processed task successfully on Local/GPU.")
@@ -417,41 +573,7 @@ async def submit_task(
             }
 
         # 3. Save to Database
-        agent_record = db.query(Agent).filter(Agent.name == target_agent).first()
-        reputation = agent_record.reputation_multiplier if agent_record else 1.0
-        price = int(task_data.complexity * 1_000_000 * reputation)
-
-        task_id = str(uuid.uuid4())
-        new_task = Task(
-            id=task_id,
-            description=task_data.description,
-            agent_name=target_agent,
-            status="completed",
-            result=final_response,
-            complexity=task_data.complexity,
-            price_satoshis=price,
-            completed_at=datetime.now(timezone.utc),
-            buyer_id=task_data.buyer_id or "anon"
-        )
-        db.add(new_task)
-
-        # Save Training Data
-        td = TrainingData(
-            id=str(uuid.uuid4()),
-            task_id=task_id,
-            input_data=json.dumps({"description": task_data.description, "complexity": task_data.complexity}),
-            output_data=json.dumps({"result": training_response or final_response, "agent": target_agent}),
-            success=True,
-            agent_name=target_agent,
-            persona_type=target_agent
-        )
-        db.add(td)
-
-        if agent_record:
-            agent_record.total_tasks_completed += 1
-            agent_record.balance_satoshis += price
-
-        db.commit()
+        task_id, price = _record_task(db, task_data, target_agent, final_response, training_response)
 
         # === 4. MEMORY HARVESTING (Training Data Save) ===
         if final_response and response_source == "gemini_cloud":
@@ -513,6 +635,28 @@ async def submit_task(
         logger.error(f"❌ TASK ERROR: {str(e)}")
         # Return a clean JSON error instead of crashing
         return JSONResponse(status_code=500, content={"message": f"Task processing failed: {str(e)}"})
+
+
+@router.get("/tasks/jobs/{job_id}")
+async def get_task_job(job_id: str):
+    """Progress of a streamed answer or simplification: text written so far,
+    and the final response once done."""
+    job = _JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown or expired job - it may have been lost in a restart.")
+    return {k: v for k, v in job.items() if k != "created"}
+
+
+@router.post("/tasks/simplify")
+async def simplify_answer(req: SimplifyRequest):
+    """Start a plain-language rewrite of an answer (the dashboard's "Simple
+    explanation" toggle). Streamed like answers; never saved as training
+    data - it's a presentation of an existing answer, not a new one."""
+    if not state.duke_brain or state.duke_brain.model is None:
+        raise HTTPException(status_code=503, detail="Duke Brain is not initialized.")
+    job_id = _new_job()
+    asyncio.create_task(_run_simplify_job(job_id, req.text))
+    return {"job_id": job_id, "status": "streaming"}
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse)

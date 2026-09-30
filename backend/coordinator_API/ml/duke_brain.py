@@ -26,7 +26,7 @@ from pathlib import Path
 
 import torch
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
 from google import genai
 
 from coordinator_API.core.config import APP_DIR, get_persistent_data_dir
@@ -64,6 +64,28 @@ def safe_generate(prompt: str):
 
 # Example usage:
 # print(safe_generate("Explain quantum entanglement like I'm five."))
+
+
+# Upper bound on answer length, in tokens (~1,500 words). Not a style limit:
+# the model ends answers on its own long before this - it only exists so a
+# degenerate generation loop can't run forever. When it is ever reached,
+# last_hit_token_limit is set so callers can say so instead of silently
+# presenting a cut-off answer (the old 200/350 caps did exactly that).
+MAX_NEW_TOKENS = 2048
+
+
+class _CallbackStreamer(TextStreamer):
+    """Forwards generated text to a callback as it's produced (whole words
+    at a time - TextStreamer holds back partial words), so answers can be
+    shown while they're still being written."""
+
+    def __init__(self, tokenizer, on_text):
+        super().__init__(tokenizer, skip_prompt=True, skip_special_tokens=True)
+        self._on_text = on_text
+
+    def on_finalized_text(self, text, stream_end=False):
+        if text:
+            self._on_text(text)
 
 
 class DukeGenerativeBrain:
@@ -122,7 +144,9 @@ class DukeGenerativeBrain:
                 self.model = None
                 self.mode = "unavailable"
 
-    def generate_response(self, prompt, max_length=256, system_prompt=None):
+    def generate_response(self, prompt, max_length=256, system_prompt=None, on_text=None):
+        """on_text: optional callback receiving text as it's generated."""
+        self.last_hit_token_limit = False
         if not self.model or not self.tokenizer:
             return "Duke Brain is currently offline or initializing."
 
@@ -166,11 +190,10 @@ class DukeGenerativeBrain:
                 outputs = self.model.generate(
                     inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
-                    # 200 cut real answers off mid-word (seen live: "...
-                    # simultaneously preservi"). 350 leaves room for a
-                    # complete explanation; the model still stops on its
-                    # own well before that for short questions.
-                    max_new_tokens=350,
+                    # See MAX_NEW_TOKENS - a safety ceiling, not a length
+                    # limit (350 still cut real answers off mid-list).
+                    max_new_tokens=MAX_NEW_TOKENS,
+                    streamer=_CallbackStreamer(self.tokenizer, on_text) if on_text else None,
                     # Greedy decoding: factual Q&A wants the model's most
                     # likely answer, not a random sample (the old
                     # temperature=0.7 sampling added creative drift).
@@ -186,6 +209,7 @@ class DukeGenerativeBrain:
 
             # Only decode the newly generated tokens, not the echoed prompt
             new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+            self.last_hit_token_limit = len(new_tokens) >= MAX_NEW_TOKENS
             decoded = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             answer = decoded.strip()
 
