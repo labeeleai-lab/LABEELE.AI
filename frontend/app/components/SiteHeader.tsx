@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 
 const NAV_LINKS = [
@@ -13,73 +14,86 @@ const NAV_LINKS = [
 ]
 
 export default function SiteHeader() {
+  const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  // Close the mobile menu on navigation and on Escape
+  useEffect(() => setMobileOpen(false), [pathname])
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMobileOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
   return (
-    <header className="sticky top-0 z-50 border-b border-gold-500/20 bg-royal-blue-900/90 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 shrink-0">
+    <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-[#0b1535]/70 backdrop-blur-xl backdrop-saturate-150">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] btn btn-primary btn-sm">
+        Skip to content
+      </a>
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
+        <Link href="/" className="flex shrink-0 items-center" aria-label="LABEELE.AI home">
           <Image src="/images/Logo.png" alt="LABEELE.AI" width={144} height={36} priority className="h-7 w-auto object-contain" />
         </Link>
 
-        <nav className="hidden md:flex items-center gap-8">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm text-gray-300 hover:text-gold-500 transition-colors"
-            >
-              {link.label}
-            </Link>
-          ))}
+        <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
+          {NAV_LINKS.map((link) => {
+            const active = pathname === link.href
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? 'page' : undefined}
+                className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  active ? 'bg-white/[0.07] text-white' : 'text-gray-300 hover:bg-white/[0.04] hover:text-white'
+                }`}
+              >
+                {link.label}
+              </Link>
+            )
+          })}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-gray-200 hover:text-gold-500 transition-colors px-3 py-2"
-          >
+        <div className="hidden items-center gap-2 md:flex">
+          <Link href="/login" className="btn btn-ghost btn-sm">
             Log in
           </Link>
-          <Link
-            href="/signup"
-            className="text-sm font-semibold px-4 py-2 rounded-lg bg-gold-500 text-royal-blue-900 hover:bg-gold-400 transition-colors"
-          >
+          <Link href="/signup" className="btn btn-primary btn-sm">
             Start free trial
           </Link>
         </div>
 
         <button
-          className="md:hidden text-gray-200 cursor-pointer"
+          type="button"
+          className="btn btn-ghost btn-icon md:hidden"
           aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileOpen}
+          aria-controls="mobile-nav"
           onClick={() => setMobileOpen((v) => !v)}
         >
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
 
       {mobileOpen && (
-        <nav className="md:hidden border-t border-gold-500/20 bg-royal-blue-900 px-6 py-4 flex flex-col gap-4">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-gray-200 hover:text-gold-500 transition-colors"
-              onClick={() => setMobileOpen(false)}
-            >
-              {link.label}
-            </Link>
-          ))}
-          <div className="border-t border-gold-500/10 pt-4 flex flex-col gap-3">
-            <Link href="/login" className="text-gray-200 hover:text-gold-500" onClick={() => setMobileOpen(false)}>
+        <nav id="mobile-nav" aria-label="Primary" className="animate-message-in border-t border-white/[0.07] px-4 py-4 md:hidden">
+          <div className="flex flex-col gap-1">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={pathname === link.href ? 'page' : undefined}
+                className="rounded-lg px-3 py-2.5 text-gray-200 transition-colors hover:bg-white/[0.05]"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/[0.07] pt-4">
+            <Link href="/login" className="btn btn-secondary">
               Log in
             </Link>
-            <Link
-              href="/signup"
-              className="text-center font-semibold px-4 py-2 rounded-lg bg-gold-500 text-royal-blue-900"
-              onClick={() => setMobileOpen(false)}
-            >
+            <Link href="/signup" className="btn btn-primary">
               Start free trial
             </Link>
           </div>

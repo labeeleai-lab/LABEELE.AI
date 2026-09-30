@@ -32,7 +32,7 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
 
 export default function SiteFooter() {
   return (
-    <footer className="border-t border-gold-500/15 bg-royal-blue-900 px-6 lg:px-8 py-16">
+    <footer className="border-t border-white/[0.07] bg-[#081030]/60 px-4 py-16 backdrop-blur-xl sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           <div>
@@ -45,11 +45,11 @@ export default function SiteFooter() {
 
           {COLUMNS.map((col) => (
             <div key={col.title}>
-              <h4 className="text-gold-500 font-semibold mb-4 text-sm">{col.title}</h4>
+              <h2 className="eyebrow mb-4">{col.title}</h2>
               <ul className="space-y-2.5">
                 {col.links.map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className="text-gray-400 text-sm hover:text-gold-500 transition-colors">
+                    <Link href={link.href} className="text-sm text-gray-400 transition-colors hover:text-white">
                       {link.label}
                     </Link>
                   </li>
@@ -59,7 +59,7 @@ export default function SiteFooter() {
           ))}
         </div>
 
-        <div className="border-t border-gold-500/10 pt-8">
+        <div className="border-t border-white/[0.07] pt-8">
           <p className="text-center text-gray-500 text-sm">
             © {new Date().getFullYear()} LABEELE.AI. All rights reserved.
           </p>

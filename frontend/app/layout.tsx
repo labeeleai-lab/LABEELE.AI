@@ -1,5 +1,10 @@
 import type { Metadata, Viewport } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
+
+// Self-hosted at build time by next/font (no runtime request to Google);
+// exposed as --font-sans for globals.css and Tailwind's font-sans.
+const inter = Inter({ subsets: ['latin'], display: 'swap', variable: '--font-sans' })
 
 export const metadata: Metadata = {
   title: {
@@ -40,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body>{children}</body>
     </html>
   )

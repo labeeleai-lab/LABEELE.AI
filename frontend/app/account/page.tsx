@@ -9,6 +9,7 @@ import { Loader2, Check, Trash2 } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import GlassCard from '../components/GlassCard'
 import PasswordInput from '../components/PasswordInput'
+import { PageHeader } from '../components/ui'
 
 const profileSchema = z.object({
   fullName: z.string().max(100).optional(),
@@ -104,14 +105,14 @@ export default function AccountPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl font-bold text-white mb-8">Account</h1>
+      <PageHeader title="Account" description="Your profile, password, and account settings." />
 
       <div className="max-w-2xl space-y-6">
         <GlassCard>
           <h2 className="text-lg font-semibold text-white mb-5">Profile</h2>
           <form onSubmit={profileFormApi.handleSubmit(onSaveProfile)} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
+              <label className="label">Email</label>
               <input
                 type="email"
                 value={email ?? ''}
@@ -120,13 +121,13 @@ export default function AccountPage() {
               />
             </div>
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="fullName" className="label">
                 Display name
               </label>
               <input
                 id="fullName"
                 type="text"
-                className="w-full px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors"
+                className="input w-full"
                 {...profileFormApi.register('fullName')}
               />
             </div>
@@ -134,7 +135,7 @@ export default function AccountPage() {
               <button
                 type="submit"
                 disabled={profileFormApi.formState.isSubmitting}
-                className="px-5 py-2.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50"
+                className="btn btn-primary"
               >
                 {profileFormApi.formState.isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
               </button>
@@ -151,12 +152,12 @@ export default function AccountPage() {
           <h2 className="text-lg font-semibold text-white mb-5">Change password</h2>
           <form onSubmit={passwordFormApi.handleSubmit(onChangePassword)} className="space-y-4">
             {passwordError && (
-              <div role="alert" className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
+              <div role="alert" className="alert alert-error">
                 {passwordError}
               </div>
             )}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="password" className="label">
                 New password
               </label>
               <PasswordInput id="password" autoComplete="new-password" {...passwordFormApi.register('password')} />
@@ -167,7 +168,7 @@ export default function AccountPage() {
               )}
             </div>
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="confirmPassword" className="label">
                 Confirm new password
               </label>
               <PasswordInput id="confirmPassword" autoComplete="new-password" {...passwordFormApi.register('confirmPassword')} />
@@ -181,7 +182,7 @@ export default function AccountPage() {
               <button
                 type="submit"
                 disabled={passwordFormApi.formState.isSubmitting}
-                className="px-5 py-2.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50"
+                className="btn btn-primary"
               >
                 {passwordFormApi.formState.isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update password'}
               </button>
@@ -208,7 +209,7 @@ export default function AccountPage() {
                 This permanently deletes your account and query history. This can&apos;t be undone.
               </p>
               {deleteError && (
-                <div role="alert" className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
+                <div role="alert" className="alert mb-4 alert-error">
                   {deleteError}
                 </div>
               )}

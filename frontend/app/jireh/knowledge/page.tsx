@@ -8,14 +8,12 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
-  CheckCircle2,
-  AlertTriangle,
   Globe2,
-  Circle,
+  BookOpen,
 } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
-import GlassCard from '../../components/GlassCard'
 import { dukeApi, DukeApiError, type PersonaConfig, type KnowledgeSource, type KnowledgeChunkDetail } from '@/lib/duke-api'
+import { Alert, EmptyState, LoadingRow, PageHeader, SectionTitle } from '../../components/ui'
 
 function ConfirmDeleteButton({ label, onConfirm }: { label: string; onConfirm: () => Promise<void> }) {
   const [armed, setArmed] = useState(false)
@@ -48,7 +46,8 @@ function ConfirmDeleteButton({ label, onConfirm }: { label: string; onConfirm: (
       onClick={handleClick}
       disabled={loading}
       title={armed ? 'Click again to confirm' : label}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+      aria-label={armed ? `Confirm: ${label}` : label}
+      className={`flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
         armed ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-red-400 hover:bg-red-500/10'
       }`}
     >
@@ -185,62 +184,67 @@ export default function AdminKnowledgePage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Knowledge</h1>
-      <p className="text-gray-400 mb-8">
-        Train DUKE or any individual agent with documents. Uploaded content is chunked, embedded, and retrieved live
-        in real responses on <code>/tasks/submit</code> - no redeploy needed once this backend change is live.
-      </p>
+      <PageHeader eyebrow="JIREH · Model" title="Knowledge" description="Give DUKE or any single persona documents to draw on. Content is split into passages and searched live on every question - answers cite the sources they used." />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <GlassCard className="lg:col-span-1 h-fit">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Scope</h2>
-          <ul className="space-y-1.5">
-            <li>
-              <button
-                onClick={() => selectScope({ type: 'global' })}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer flex items-center gap-2 ${
-                  scope.type === 'global'
-                    ? 'bg-gold-500/15 text-gold-500 border border-gold-500/30'
-                    : 'text-gray-300 hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Globe2 className="w-3.5 h-3.5 shrink-0" />
-                DUKE Global
-              </button>
-            </li>
-          </ul>
-          <div className="h-px bg-gold-500/10 my-3" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <nav aria-label="Knowledge scope" className="surface h-fit p-3 lg:col-span-1">
+          <p className="px-3 pt-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Shared</p>
+          <button
+            type="button"
+            onClick={() => selectScope({ type: 'global' })}
+            aria-current={scope.type === 'global' ? 'true' : undefined}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer ${
+              scope.type === 'global' ? 'bg-white/[0.07] font-medium text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-100'
+            }`}
+          >
+            <Globe2 className="h-4 w-4 shrink-0 text-gold-400" aria-hidden="true" />
+            DUKE Global
+          </button>
+          <p className="px-3 pt-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Personas</p>
           {!personas ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading agents&hellip;
-            </div>
+            <LoadingRow label="Loading personas…" className="px-3" />
+          ) : personas.length === 0 ? (
+            <p className="px-3 pb-2 text-xs text-gray-500">No personas available.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {personas.map((p) => (
-                <li key={p.persona_id}>
-                  <button
-                    onClick={() => selectScope({ type: 'agent', personaId: p.persona_id, personaName: p.name })}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer flex items-center gap-2 ${
-                      scope.type === 'agent' && scope.personaId === p.persona_id
-                        ? 'bg-gold-500/15 text-gold-500 border border-gold-500/30'
-                        : 'text-gray-300 hover:bg-white/5 border border-transparent'
-                    }`}
-                  >
-                    <Circle className={`w-2 h-2 shrink-0 ${p.is_active ? 'fill-emerald-400 text-emerald-400' : 'fill-gray-600 text-gray-600'}`} />
-                    {p.name}
-                  </button>
-                </li>
-              ))}
+            <ul className="space-y-0.5">
+              {personas.map((p) => {
+                const active = scope.type === 'agent' && scope.personaId === p.persona_id
+                return (
+                  <li key={p.persona_id}>
+                    <button
+                      type="button"
+                      onClick={() => selectScope({ type: 'agent', personaId: p.persona_id, personaName: p.name })}
+                      aria-current={active ? 'true' : undefined}
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer ${
+                        active ? 'bg-white/[0.07] font-medium text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-100'
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.is_active ? 'bg-emerald-400' : 'bg-gray-600'}`}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{p.name}</span>
+                      {!p.is_active && <span className="badge badge-neutral ml-auto">Inactive</span>}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
-        </GlassCard>
+        </nav>
 
-        <div className="lg:col-span-2 space-y-6">
-          <GlassCard>
-            <h2 className="font-semibold text-white mb-1">Add knowledge to {scopeLabel}</h2>
-            <p className="text-gray-400 text-sm mb-5">
-              Paste text below, or upload a <code>.txt</code>, <code>.md</code>, or <code>.pdf</code> file.
-            </p>
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <section className="surface p-5 sm:p-6" aria-labelledby="add-knowledge">
+            <SectionTitle
+              description={
+                <>
+                  Paste text below, or upload a <code className="font-mono text-gold-200">.txt</code>,{' '}
+                  <code className="font-mono text-gold-200">.md</code>, or <code className="font-mono text-gold-200">.pdf</code> file.
+                </>
+              }
+            >
+              <span id="add-knowledge">Add knowledge to {scopeLabel}</span>
+            </SectionTitle>
 
             <input
               ref={fileInputRef}
@@ -254,39 +258,39 @@ export default function AdminKnowledgePage() {
               }}
             />
 
-            <div className="space-y-3 mb-4">
-              <input
-                type="text"
-                placeholder={'Label for this knowledge (e.g. "Refund policy")'}
-                value={sourceName}
-                onChange={(e) => setSourceName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors text-sm"
-              />
-              <textarea
-                placeholder="Paste text or markdown here..."
-                rows={6}
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors text-sm resize-y"
-              />
+            <div className="mb-4 space-y-3">
+              <div>
+                <label htmlFor="knowledge-label" className="label">
+                  Label
+                </label>
+                <input
+                  id="knowledge-label"
+                  type="text"
+                  placeholder={'e.g. "Refund policy"'}
+                  value={sourceName}
+                  onChange={(e) => setSourceName(e.target.value)}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label htmlFor="knowledge-text" className="label">
+                  Content
+                </label>
+                <textarea
+                  id="knowledge-text"
+                  placeholder="Paste text or markdown here..."
+                  rows={6}
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  className="input resize-y"
+                />
+              </div>
             </div>
 
             {uploadNotice && (
-              <div
-                role="alert"
-                className={`mb-4 p-3 rounded-lg border text-sm flex items-start gap-2.5 ${
-                  uploadNotice.type === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                    : 'bg-red-500/10 border-red-500/30 text-red-300'
-                }`}
-              >
-                {uploadNotice.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                )}
+              <Alert tone={uploadNotice.type} className="mb-4">
                 {uploadNotice.message}
-              </div>
+              </Alert>
             )}
 
             <div className="flex flex-wrap gap-3">
@@ -294,81 +298,85 @@ export default function AdminKnowledgePage() {
                 type="button"
                 onClick={handlePasteUpload}
                 disabled={uploading || !pasteText.trim() || !sourceName.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold bg-gold-500 text-royal-blue-900 hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="btn btn-primary"
               >
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <UploadCloud className="h-4 w-4" aria-hidden="true" />}
                 Add text
               </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white/5 border border-gold-500/20 text-gray-200 hover:border-gold-500/50 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <FileUp className="w-4 h-4" /> Upload file
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="btn btn-secondary">
+                <FileUp className="h-4 w-4" aria-hidden="true" /> Upload file
               </button>
             </div>
-          </GlassCard>
+          </section>
 
-          <GlassCard>
-            <h2 className="font-semibold text-white mb-4">Knowledge for {scopeLabel}</h2>
+          <section className="surface p-5 sm:p-6" aria-labelledby="knowledge-list">
+            <SectionTitle
+              actions={
+                sources && sources.length > 0 ? (
+                  <span className="badge badge-neutral">
+                    {sources.length} source{sources.length === 1 ? '' : 's'}
+                  </span>
+                ) : undefined
+              }
+            >
+              <span id="knowledge-list">Knowledge for {scopeLabel}</span>
+            </SectionTitle>
 
             {listError && (
-              <div role="alert" className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+              <Alert tone="error" className="mb-4">
                 {listError}
-              </div>
+              </Alert>
             )}
 
-            {!sources ? (
-              <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-              </div>
+            {listError ? null : !sources ? (
+              <LoadingRow />
             ) : sources.length === 0 ? (
-              <p className="text-gray-400 text-sm">No knowledge added yet for {scopeLabel}.</p>
+              <EmptyState
+                icon={BookOpen}
+                title={`No knowledge for ${scopeLabel} yet`}
+                description="Add text or upload a document above. It is searched on every question from then on."
+              />
             ) : (
               <ul className="space-y-2">
                 {sources.map((source) => {
                   const expanded = expandedSource === source.source_id
                   return (
-                    <li key={source.source_id} className="border border-gold-500/15 rounded-lg overflow-hidden">
-                      <button
-                        onClick={() => toggleExpand(source.source_id)}
-                        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 transition-colors cursor-pointer text-left"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
+                    <li key={source.source_id} className="surface-inset overflow-hidden">
+                      <div className="flex items-center gap-2 pr-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(source.source_id)}
+                          aria-expanded={expanded}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.03] cursor-pointer"
+                        >
                           {expanded ? (
-                            <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+                            <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
                           ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-500 shrink-0" />
+                            <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
                           )}
-                          <div className="min-w-0">
-                            <p className="text-sm text-white truncate">{source.source_name}</p>
-                            <p className="text-xs text-gray-500 truncate">{source.preview}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-xs text-gray-500">{source.chunk_count} chunk(s)</span>
-                          <ConfirmDeleteButton label="Delete source" onConfirm={() => handleDeleteSource(source.source_id)} />
-                        </div>
-                      </button>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-white">{source.source_name}</span>
+                            <span className="block truncate text-xs text-gray-500">{source.preview}</span>
+                          </span>
+                          <span className="badge badge-neutral ml-auto shrink-0">
+                            {source.chunk_count} passage{source.chunk_count === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                        <ConfirmDeleteButton label={`Delete ${source.source_name}`} onConfirm={() => handleDeleteSource(source.source_id)} />
+                      </div>
 
                       {expanded && (
-                        <div className="px-4 py-3 bg-black/20 space-y-2">
+                        <div className="space-y-2 border-t border-white/5 bg-black/20 px-4 py-3">
                           {chunksLoading === source.source_id ? (
-                            <div className="flex items-center gap-2 text-gray-400 text-xs py-2">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading chunks&hellip;
-                            </div>
+                            <LoadingRow label="Loading passages…" />
                           ) : (
                             (chunksBySource[source.source_id] || []).map((chunk) => (
                               <div
                                 key={chunk.id}
-                                className="flex items-start justify-between gap-3 p-3 bg-white/5 rounded-lg border border-gold-500/10"
+                                className="flex items-start justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3"
                               >
-                                <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{chunk.content}</p>
-                                <ConfirmDeleteButton
-                                  label="Delete chunk"
-                                  onConfirm={() => handleDeleteChunk(source.source_id, chunk.id)}
-                                />
+                                <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-300">{chunk.content}</p>
+                                <ConfirmDeleteButton label="Delete passage" onConfirm={() => handleDeleteChunk(source.source_id, chunk.id)} />
                               </div>
                             ))
                           )}
@@ -379,7 +387,7 @@ export default function AdminKnowledgePage() {
                 })}
               </ul>
             )}
-          </GlassCard>
+          </section>
         </div>
       </div>
     </AdminShell>

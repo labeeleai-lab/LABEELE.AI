@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react'
 
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/account', label: 'Account' },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/account', label: 'Account', icon: UserCircle2 },
 ]
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -29,61 +29,71 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     router.refresh()
   }
 
+  const links = isAdmin ? [...NAV_LINKS, { href: '/jireh', label: 'JIREH Mode', icon: ShieldCheck }] : NAV_LINKS
+  const isActive = (href: string) => (href === '/jireh' ? pathname.startsWith('/jireh') : pathname === href)
+
   return (
-    <div className="min-h-screen bg-royal-blue-900">
-      <header className="sticky top-0 z-50 border-b border-gold-500/20 bg-royal-blue-900/90 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
+    <div className="min-h-screen">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] btn btn-primary btn-sm">
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-[#0b1535]/75 backdrop-blur-xl backdrop-saturate-150">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex shrink-0 items-center" aria-label="LABEELE.AI home">
             <Image src="/images/Logo.png" alt="LABEELE.AI" width={120} height={30} priority className="h-6 w-auto object-contain" />
           </Link>
 
-          <nav className="hidden sm:flex items-center gap-6">
-            {NAV_LINKS.map((link) => (
+          <nav aria-label="Primary" className="hidden items-center gap-1 sm:flex">
+            {links.map((link) => {
+              const Icon = link.icon
+              const active = isActive(link.href)
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                    active ? 'bg-white/[0.07] font-medium text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-100'
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 ${active ? 'text-gold-500' : ''}`} aria-hidden="true" />
+                  {link.label}
+                </Link>
+              )
+            })}
+          </nav>
+
+          <button type="button" onClick={handleSignOut} className="btn btn-ghost btn-sm ml-auto">
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            <span>Sign out</span>
+          </button>
+        </div>
+
+        {/* Phones: the primary nav as a compact tab row (previously hidden entirely) */}
+        <nav aria-label="Primary" className="hide-scrollbar flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden">
+          {links.map((link) => {
+            const Icon = link.icon
+            const active = isActive(link.href)
+            return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-sm transition-colors ${
-                  pathname === link.href ? 'text-gold-500 font-medium' : 'text-gray-300 hover:text-gold-500'
+                aria-current={active ? 'page' : undefined}
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] ${
+                  active ? 'bg-white/[0.08] font-medium text-white' : 'text-gray-400'
                 }`}
               >
+                <Icon className={`h-3.5 w-3.5 ${active ? 'text-gold-500' : ''}`} aria-hidden="true" />
                 {link.label}
               </Link>
-            ))}
-            {isAdmin && (
-              <Link
-                href="/jireh"
-                className={`flex items-center gap-1.5 text-sm transition-colors ${
-                  pathname.startsWith('/jireh') ? 'text-gold-500 font-medium' : 'text-gray-300 hover:text-gold-500'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                JIREH Mode
-              </Link>
-            )}
-          </nav>
-
-          <div className="flex items-center gap-4">
-            {isAdmin && (
-              <Link
-                href="/jireh"
-                className="sm:hidden flex items-center gap-1.5 text-sm text-gold-500"
-                aria-label="JIREH Mode"
-              >
-                <ShieldCheck className="w-4 h-4" />
-              </Link>
-            )}
-            <button
-              onClick={handleSignOut}
-              className="flex items-center gap-2 text-sm text-gray-300 hover:text-gold-500 transition-colors cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign out
-            </button>
-          </div>
-        </div>
+            )
+          })}
+        </nav>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 lg:px-8 py-10">{children}</main>
+      <main id="main" className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+        {children}
+      </main>
     </div>
   )
 }

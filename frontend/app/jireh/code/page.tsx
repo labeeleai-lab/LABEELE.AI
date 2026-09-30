@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { Folder, FolderOpen, FileCode, Loader2, Save, CheckCircle2, AlertTriangle, AlertOctagon } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
+import { PageHeader } from '../../components/ui'
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
@@ -204,12 +205,13 @@ export default function AdminCodePage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Code</h1>
-      <p className="text-gray-400 mb-6">
-        Browse, edit, and commit directly to <code className="text-xs">labeeleai-lab/LABEELE.AI</code>.
-      </p>
+      <PageHeader
+        eyebrow="JIREH · Workspace"
+        title="Code"
+        description={<>Browse, edit, and commit directly to <code className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[13px] text-gold-200">labeeleai-lab/LABEELE.AI</code>.</>}
+      />
 
-      <div className="mb-6 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm flex items-start gap-2.5">
+      <div className="alert mb-6 alert-warning">
         <AlertOctagon className="w-4 h-4 shrink-0 mt-0.5" />
         <span>
           Committing here updates GitHub only. There&apos;s no auto-deploy to the frontend (Vercel picks up
@@ -271,8 +273,8 @@ export default function AdminCodePage() {
               {notice && (
                 <div
                   role="alert"
-                  className={`p-3 rounded-lg border text-sm flex items-start gap-2 ${
-                    notice.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'
+                  className={`alert ${
+                    notice.type === 'success' ? 'alert-success' : 'alert-error'
                   }`}
                 >
                   {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
@@ -286,12 +288,12 @@ export default function AdminCodePage() {
                   value={commitMessage}
                   onChange={(e) => setCommitMessage(e.target.value)}
                   placeholder={`Edit ${selectedPath} via admin IDE`}
-                  className="flex-1 px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors text-sm"
+                  className="input flex-1"
                 />
                 <button
                   onClick={handleCommit}
                   disabled={!dirty || committing}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn btn-primary"
                 >
                   {committing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Commit

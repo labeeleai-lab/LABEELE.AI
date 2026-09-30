@@ -64,20 +64,20 @@ function LoginFormInner() {
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
         {formError && (
-          <div role="alert" className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
+          <div role="alert" className="alert alert-error">
             {formError}
           </div>
         )}
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1.5">
+          <label htmlFor="email" className="label">
             Email
           </label>
           <input
             id="email"
             type="email"
             autoComplete="email"
-            className="w-full px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors"
+            className="input w-full"
             {...register('email')}
           />
           {errors.email && (
@@ -107,7 +107,7 @@ function LoginFormInner() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn btn-primary btn-lg w-full"
         >
           {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Log in'}
         </button>

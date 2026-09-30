@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, UserPlus, Trash2, ShieldCheck } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
+import { Alert, LoadingRow, PageHeader } from '../../components/ui'
 
 interface AdminUser {
   email: string
@@ -72,8 +73,7 @@ export default function AdminTeamPage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Team</h1>
-      <p className="text-gray-400 mb-8">Manage who has access to JIREH Mode.</p>
+      <PageHeader eyebrow="JIREH · Workspace" title="Team" description={<>Manage who has access to JIREH Mode.</>} />
 
       <div className="max-w-2xl space-y-6">
         <GlassCard>
@@ -85,12 +85,12 @@ export default function AdminTeamPage() {
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="teammate@example.com"
               required
-              className="flex-1 px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors"
+              className="input flex-1"
             />
             <button
               type="submit"
               disabled={adding}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary"
             >
               {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
               Add
@@ -105,11 +105,13 @@ export default function AdminTeamPage() {
 
         <GlassCard>
           <h2 className="text-lg font-semibold text-white mb-4">Who has access</h2>
-          {loadError && <p className="text-red-400 text-sm mb-3">{loadError}</p>}
-          {!admins ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-            </div>
+          {loadError && (
+            <Alert tone="error" className="mb-3">
+              {loadError}
+            </Alert>
+          )}
+          {loadError && !admins ? null : !admins ? (
+            <LoadingRow label="Loading team…" />
           ) : (
             <ul className="divide-y divide-gold-500/10">
               {admins.map((admin) => (

@@ -6,7 +6,7 @@ export default function AboutPage() {
   return (
     <>
       <SiteHeader />
-      <main className="bg-royal-blue-900 min-h-screen">
+      <main className=" min-h-screen">
         <section className="px-6 lg:px-8 py-24">
           <div className="max-w-3xl mx-auto">
             <h1 className="text-4xl lg:text-5xl font-bold text-white mb-6">About LABEELE.AI</h1>

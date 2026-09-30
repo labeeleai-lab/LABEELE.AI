@@ -1,13 +1,14 @@
-export default function GlassCard({ 
-  children, 
-  className = '' 
-}: { 
+// Standard LABEELE.AI card surface (see .surface in globals.css). Only
+// cards that are actually clickable get a hover state - a hover effect on a
+// static card falsely signals interactivity.
+export default function GlassCard({
+  children,
+  className = '',
+  interactive = false,
+}: {
   children: React.ReactNode
-  className?: string 
+  className?: string
+  interactive?: boolean
 }) {
-  return (
-    <div className={`bg-white/5 backdrop-blur-md border border-gold-500/25 rounded-xl p-6 transition-colors hover:border-gold-500/60 ${className}`}>
-      {children}
-    </div>
-  )
+  return <div className={`surface p-6 ${interactive ? 'surface-interactive' : ''} ${className}`}>{children}</div>
 }

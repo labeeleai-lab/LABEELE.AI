@@ -60,7 +60,7 @@ export default function FeaturesPage() {
   return (
     <>
       <SiteHeader />
-      <main className="bg-royal-blue-900">
+      <main>
         <section className="px-6 lg:px-8 py-24">
           <div className="max-w-4xl mx-auto text-center mb-16">
             <h1 className="text-4xl lg:text-5xl font-bold text-white mb-4">
@@ -137,7 +137,7 @@ export default function FeaturesPage() {
             </p>
             <Link
               href="/signup"
-              className="inline-flex items-center gap-2 px-6 py-3.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors"
+              className="btn btn-primary btn-lg"
             >
               Try it free <ArrowRight className="w-4 h-4" />
             </Link>

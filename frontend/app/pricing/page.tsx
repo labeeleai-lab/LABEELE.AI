@@ -49,7 +49,7 @@ export default function PricingPage() {
   return (
     <>
       <SiteHeader />
-      <main className="bg-royal-blue-900">
+      <main>
         <section className="px-6 lg:px-8 py-24">
           <div className="max-w-3xl mx-auto text-center mb-16">
             <h1 className="text-4xl lg:text-5xl font-bold text-white mb-4">Simple, transparent pricing</h1>
@@ -67,7 +67,7 @@ export default function PricingPage() {
                 }`}
               >
                 {tier.popular && (
-                  <div className="self-start mb-4 px-3 py-1 rounded-full bg-gold-500 text-royal-blue-900 text-xs font-bold uppercase tracking-wide">
+                  <div className="badge badge-gold self-start mb-4 uppercase tracking-wide">
                     Most popular
                   </div>
                 )}

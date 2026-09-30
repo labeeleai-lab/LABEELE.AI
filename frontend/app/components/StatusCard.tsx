@@ -1,15 +1,15 @@
-import { Loader2, AlertTriangle, Info } from 'lucide-react'
-import GlassCard from './GlassCard'
+import { AlertTriangle, Info } from 'lucide-react'
 
 export function HintIcon({ text }: { text: string }) {
   return (
-    <span className="relative inline-flex group/hint normal-case tracking-normal font-normal align-middle">
-      <Info className="w-3 h-3 text-gray-500 hover:text-gray-300 cursor-help" />
+    <span className="group/hint relative inline-flex align-middle font-normal normal-case tracking-normal">
+      <button type="button" aria-label={text} className="rounded-full text-gray-500 hover:text-gray-300 cursor-help">
+        <Info className="h-3 w-3" aria-hidden="true" />
+      </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 rounded-lg
-          border border-gold-500/30 bg-[#0f1729] px-3 py-2 text-xs leading-relaxed text-gray-300 opacity-0
-          shadow-xl transition-opacity duration-150 group-hover/hint:opacity-100 group-focus/hint:opacity-100 z-20"
+        className="surface-overlay pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-60 -translate-x-1/2 px-3 py-2 text-xs leading-relaxed text-gray-300 opacity-0
+          transition-opacity duration-150 group-hover/hint:opacity-100 group-focus-within/hint:opacity-100"
       >
         {text}
       </span>
@@ -17,6 +17,16 @@ export function HintIcon({ text }: { text: string }) {
   )
 }
 
+export type StatusTone = 'good' | 'warn' | 'neutral'
+
+const DOT: Record<StatusTone, string> = {
+  good: 'bg-emerald-400',
+  warn: 'bg-amber-400',
+  neutral: 'bg-gray-500',
+}
+
+// Metric card. `tone` adds a status dot next to the value (e.g. Online =
+// good); leave it out for plain numbers.
 export default function StatusCard({
   label,
   value,
@@ -24,6 +34,7 @@ export default function StatusCard({
   loading,
   error,
   hint,
+  tone,
 }: {
   label: string
   value?: string
@@ -31,29 +42,34 @@ export default function StatusCard({
   loading: boolean
   error?: string | null
   hint?: string
+  tone?: StatusTone
 }) {
   return (
-    <GlassCard>
-      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+    <div className="surface flex min-h-[6.5rem] flex-col justify-between p-5">
+      <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
         {label}
         {hint && <HintIcon text={hint} />}
       </div>
       {loading ? (
-        <div className="flex items-center gap-2 text-gray-400">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-sm">Checking&hellip;</span>
+        <div role="status" aria-label={`${label}: loading`} className="space-y-2">
+          <div className="shimmer-line h-5 w-24 animate-shimmer rounded-md" />
+          <div className="shimmer-line h-3 w-32 animate-shimmer rounded" />
         </div>
       ) : error ? (
-        <div className="flex items-center gap-2 text-amber-400" title={error}>
-          <AlertTriangle className="w-4 h-4" />
-          <span className="text-sm">Offline</span>
+        <div className="flex items-center gap-2 text-amber-300" title={error}>
+          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          <span className="text-base font-semibold">Offline</span>
+          <span className="sr-only">: {error}</span>
         </div>
       ) : (
-        <>
-          <div className="text-xl font-bold text-white">{value}</div>
-          {detail && <div className="text-xs text-gray-500 mt-1">{detail}</div>}
-        </>
+        <div>
+          <div className="flex items-center gap-2 text-xl font-semibold tracking-tight text-white">
+            {tone && <span aria-hidden="true" className={`h-2 w-2 rounded-full ${DOT[tone]}`} />}
+            {value ?? '—'}
+          </div>
+          {detail && <div className="mt-1 truncate text-xs text-gray-500">{detail}</div>}
+        </div>
       )}
-    </GlassCard>
+    </div>
   )
 }

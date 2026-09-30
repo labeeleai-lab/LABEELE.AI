@@ -5,7 +5,7 @@ export default function PrivacyPage() {
   return (
     <>
       <SiteHeader />
-      <main className="bg-royal-blue-900 min-h-screen">
+      <main className=" min-h-screen">
         <section className="px-6 lg:px-8 py-24">
           <div className="max-w-3xl mx-auto prose-content">
             <h1 className="text-4xl font-bold text-white mb-2">Privacy Policy</h1>

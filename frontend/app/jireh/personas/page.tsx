@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Save, CheckCircle2, AlertTriangle, Circle } from 'lucide-react'
+import { Loader2, Plus, Save, CheckCircle2, AlertTriangle, Users2 } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
 import { dukeApi, DukeApiError, type PersonaConfig } from '@/lib/duke-api'
+import { EmptyState, LoadingRow, PageHeader } from '../../components/ui'
 
 interface FormState {
   persona_id: string
@@ -138,60 +139,72 @@ export default function AdminPersonasPage() {
 
   return (
     <AdminShell>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-3xl font-bold text-white">Personas</h1>
-        <button
-          onClick={startCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors text-sm"
-        >
-          <Plus className="w-4 h-4" /> New persona
-        </button>
-      </div>
-      <p className="text-gray-400 mb-8">
-        Edits take effect on the next query - no redeploy needed once this backend change is live.
-      </p>
+      <PageHeader
+        eyebrow="JIREH · Model"
+        title="Personas"
+        description="Edit how each persona thinks and speaks. Changes take effect on the very next query - no redeploy needed."
+        actions={
+          <button type="button" onClick={startCreate} className="btn btn-primary">
+            <Plus className="w-4 h-4" aria-hidden="true" /> New persona
+          </button>
+        }
+      />
 
       {listError && (
-        <div role="alert" className="mb-6 p-4 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+        <div role="alert" className="alert mb-6 alert-error">
           {listError}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <GlassCard className="lg:col-span-1 h-fit">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">All personas</h2>
-          {!personas ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-            </div>
+        <nav aria-label="Personas" className="surface h-fit p-3 lg:col-span-1">
+          <p className="px-3 pt-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">All personas</p>
+          {listError && !personas ? (
+            <p className="px-3 pb-2 text-xs text-gray-500">Unavailable - see the error above.</p>
+          ) : !personas ? (
+            <LoadingRow label="Loading personas…" className="px-3" />
           ) : personas.length === 0 ? (
-            <p className="text-gray-400 text-sm">None yet.</p>
+            <p className="px-3 pb-2 text-sm text-gray-400">None yet.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {personas.map((p) => (
-                <li key={p.persona_id}>
-                  <button
-                    onClick={() => selectPersona(p)}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
-                      selectedId === p.persona_id && !creating
-                        ? 'bg-gold-500/15 text-gold-500 border border-gold-500/30'
-                        : 'text-gray-300 hover:bg-white/5 border border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Circle className={`w-2 h-2 shrink-0 ${p.is_active ? 'fill-emerald-400 text-emerald-400' : 'fill-gray-600 text-gray-600'}`} />
-                      {p.name}
-                    </div>
-                  </button>
-                </li>
-              ))}
+            <ul className="space-y-0.5">
+              {personas.map((p) => {
+                const active = selectedId === p.persona_id && !creating
+                return (
+                  <li key={p.persona_id}>
+                    <button
+                      type="button"
+                      onClick={() => selectPersona(p)}
+                      aria-current={active ? 'true' : undefined}
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer ${
+                        active ? 'bg-white/[0.07] font-medium text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-100'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.is_active ? 'bg-emerald-400' : 'bg-gray-600'}`}
+                      />
+                      <span className="truncate">{p.name}</span>
+                      {!p.is_active && <span className="badge badge-neutral ml-auto">Inactive</span>}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
-        </GlassCard>
+        </nav>
 
         <GlassCard className="lg:col-span-2">
           {!creating && !selectedId ? (
-            <p className="text-gray-400 text-sm">Select a persona, or create a new one.</p>
+            <EmptyState
+              icon={Users2}
+              title="No persona selected"
+              description="Pick a persona on the left to edit its instructions, or create a new one."
+              action={
+                <button type="button" onClick={startCreate} className="btn btn-secondary btn-sm">
+                  <Plus className="h-4 w-4" aria-hidden="true" /> New persona
+                </button>
+              }
+            />
           ) : (
             <form onSubmit={handleSave} className="space-y-5">
               <h2 className="text-lg font-semibold text-white">{creating ? 'New persona' : form.name}</h2>
@@ -199,8 +212,8 @@ export default function AdminPersonasPage() {
               {notice && (
                 <div
                   role="alert"
-                  className={`p-3 rounded-lg border text-sm flex items-start gap-2 ${
-                    notice.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'
+                  className={`alert ${
+                    notice.type === 'success' ? 'alert-success' : 'alert-error'
                   }`}
                 >
                   {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
@@ -210,7 +223,7 @@ export default function AdminPersonasPage() {
 
               {creating && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  <label className="label">
                     Persona ID <span className="text-gray-500 font-normal">(lowercase, hyphens only - e.g. web-developer)</span>
                   </label>
                   <input
@@ -219,14 +232,14 @@ export default function AdminPersonasPage() {
                     pattern="^[a-z0-9\-]+$"
                     value={form.persona_id}
                     onChange={(e) => setForm({ ...form, persona_id: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors font-mono text-sm"
+                    className="input w-full font-mono"
                   />
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Name</label>
+                  <label className="label">Name</label>
                   <input
                     type="text"
                     required
@@ -236,7 +249,7 @@ export default function AdminPersonasPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Category</label>
+                  <label className="label">Category</label>
                   <input
                     type="text"
                     required
@@ -248,13 +261,13 @@ export default function AdminPersonasPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">System prompt</label>
+                <label className="label">System prompt</label>
                 <textarea
                   required
                   rows={10}
                   value={form.system_prompt}
                   onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
-                  className="w-full px-4 py-3 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors font-mono text-sm resize-y"
+                  className="input w-full font-mono resize-y"
                 />
               </div>
 
@@ -331,7 +344,7 @@ export default function AdminPersonasPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-6 py-3 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn btn-primary btn-lg"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 {creating ? 'Create persona' : 'Save changes'}

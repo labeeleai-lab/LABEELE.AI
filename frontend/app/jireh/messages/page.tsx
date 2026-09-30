@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Mail, MailOpen } from 'lucide-react'
+import { Loader2, Mail, MailOpen, Inbox } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
+import { Alert, EmptyState, LoadingRow, PageHeader } from '../../components/ui'
 
 interface ContactMessage {
   id: string
@@ -47,18 +48,19 @@ export default function AdminMessagesPage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Messages</h1>
-      <p className="text-gray-400 mb-8">Submissions from the site&apos;s contact form.</p>
+      <PageHeader eyebrow="JIREH · Workspace" title="Messages" description={<>Submissions from the site&apos;s contact form.</>} />
 
       <div className="max-w-3xl">
-        {loadError && <p className="text-red-400 text-sm mb-4">{loadError}</p>}
+        {loadError && (
+          <Alert tone="error" className="mb-4">
+            {loadError}
+          </Alert>
+        )}
 
-        {!messages ? (
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-          </div>
+        {loadError && !messages ? null : !messages ? (
+          <LoadingRow label="Loading messages…" />
         ) : messages.length === 0 ? (
-          <p className="text-gray-400 text-sm">No messages yet.</p>
+          <EmptyState icon={Inbox} title="No messages yet" description="Submissions from the public contact form will appear here." className="surface" />
         ) : (
           <div className="space-y-4">
             {messages.map((msg) => (

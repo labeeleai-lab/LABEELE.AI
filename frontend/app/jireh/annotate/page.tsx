@@ -1,10 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Star, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Loader2, Star, CheckCircle2, AlertTriangle, RefreshCw, ClipboardList } from 'lucide-react'
 import AdminShell from '../../components/AdminShell'
 import GlassCard from '../../components/GlassCard'
 import { dukeApi, DukeApiError, type DukeTask } from '@/lib/duke-api'
+import { EmptyState, LoadingRow, PageHeader } from '../../components/ui'
+import MarkdownMessage from '../../components/duke/MarkdownMessage'
+import { parseResponse } from '../../components/duke/parseResponse'
+import { getAgent } from '../../components/duke/agents'
 
 export default function AdminAnnotatePage() {
   const [tasks, setTasks] = useState<DukeTask[] | null>(null)
@@ -61,75 +65,93 @@ export default function AdminAnnotatePage() {
 
   return (
     <AdminShell>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-3xl font-bold text-white">Annotate</h1>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-gold-500 transition-colors cursor-pointer"
-        >
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
-      </div>
-      <p className="text-gray-400 mb-8">Review recent queries and rate or correct DUKE&apos;s responses.</p>
+      <PageHeader
+        eyebrow="JIREH · Model"
+        title="Annotate"
+        description="Review recent queries and rate or correct DUKE's responses. Low ratings are excluded from future training."
+        actions={
+          <button type="button" onClick={load} className="btn btn-secondary btn-sm">
+            <RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh
+          </button>
+        }
+      />
 
       {listError && (
-        <div role="alert" className="mb-6 p-4 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+        <div role="alert" className="alert mb-6 alert-error">
           {listError}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <GlassCard className="lg:col-span-1 h-fit max-h-[36rem] overflow-y-auto">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Recent queries</h2>
-          {!tasks ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-            </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <nav aria-label="Recent queries" className="surface h-fit max-h-[36rem] overflow-y-auto p-3 lg:col-span-1">
+          <p className="px-3 pt-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">Recent queries</p>
+          {listError && !tasks ? (
+            <p className="px-3 pb-2 text-xs text-gray-500">Unavailable - see the error above.</p>
+          ) : !tasks ? (
+            <LoadingRow label="Loading queries…" className="px-3" />
           ) : tasks.length === 0 ? (
-            <p className="text-gray-400 text-sm">No queries yet.</p>
+            <p className="px-3 pb-2 text-sm text-gray-400">No queries yet.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {tasks.map((task) => (
-                <li key={task.id}>
-                  <button
-                    onClick={() => selectTask(task)}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer ${
-                      selected?.id === task.id
-                        ? 'bg-gold-500/15 text-gold-500 border border-gold-500/30'
-                        : 'text-gray-300 hover:bg-white/5 border border-transparent'
-                    }`}
-                  >
-                    <p className="text-xs text-gold-500/80 font-medium mb-1">{task.agent_name}</p>
-                    <p className="line-clamp-2 text-xs">{task.description}</p>
-                  </button>
-                </li>
-              ))}
+            <ul className="space-y-0.5">
+              {tasks.map((task) => {
+                const active = selected?.id === task.id
+                return (
+                  <li key={task.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectTask(task)}
+                      aria-current={active ? 'true' : undefined}
+                      className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                        active ? 'bg-white/[0.07]' : 'hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <span className="mb-1 block text-[11px] font-medium text-gold-400">{getAgent(task.agent_name).name}</span>
+                      <span className={`line-clamp-2 block text-xs ${active ? 'text-white' : 'text-gray-300'}`}>{task.description}</span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
-        </GlassCard>
+        </nav>
 
         <GlassCard className="lg:col-span-2">
           {!selected ? (
-            <p className="text-gray-400 text-sm">Select a query to review.</p>
+            <EmptyState
+              icon={ClipboardList}
+              title="No query selected"
+              description="Pick a recent query on the left to read DUKE's answer, rate it, and correct it if needed."
+            />
           ) : (
             <div className="space-y-6">
               <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">Query</h2>
-                <p className="text-white text-sm">{selected.description}</p>
+                <h2 className="eyebrow mb-2 text-gray-500">Query</h2>
+                <p className="text-sm text-white">{selected.description}</p>
               </div>
               <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">Response</h2>
-                <p className="text-gray-300 text-sm whitespace-pre-wrap bg-white/5 border border-gold-500/15 rounded-lg p-4">
-                  {selected.result || 'No response recorded.'}
-                </p>
+                <h2 className="eyebrow mb-2 text-gray-500">Response</h2>
+                <div className="surface-inset p-4">
+                  {selected.result ? (
+                    <>
+                      <MarkdownMessage content={parseResponse(selected.result).body} />
+                      {parseResponse(selected.result).sources.length > 0 && (
+                        <p className="mt-3 border-t border-white/5 pt-3 text-xs text-gray-500">
+                          Sources: {parseResponse(selected.result).sources.join(' · ')}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">No response recorded.</p>
+                  )}
+                </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4 pt-2 border-t border-gold-500/10">
+              <form onSubmit={handleSubmit} className="space-y-4 border-t border-white/[0.07] pt-5">
                 {notice && (
                   <div
                     role="alert"
-                    className={`p-3 rounded-lg border text-sm flex items-start gap-2 ${
-                      notice.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'
+                    className={`alert ${
+                      notice.type === 'success' ? 'alert-success' : 'alert-error'
                     }`}
                   >
                     {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
@@ -138,7 +160,7 @@ export default function AdminAnnotatePage() {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Rating</label>
+                  <label className="label">Rating</label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
@@ -155,7 +177,7 @@ export default function AdminAnnotatePage() {
                 </div>
 
                 <div>
-                  <label htmlFor="comment" className="block text-sm font-medium text-gray-300 mb-1.5">
+                  <label htmlFor="comment" className="label">
                     Correction or comment (optional)
                   </label>
                   <textarea
@@ -164,14 +186,14 @@ export default function AdminAnnotatePage() {
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="What should the response have said instead?"
-                    className="w-full px-4 py-2.5 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors resize-none"
+                    className="input w-full resize-none"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={rating === 0 || submitting}
-                  className="flex items-center gap-2 px-6 py-3 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn btn-primary btn-lg"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit feedback'}
                 </button>

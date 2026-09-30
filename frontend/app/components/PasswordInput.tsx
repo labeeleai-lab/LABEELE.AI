@@ -12,7 +12,7 @@ const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInput
         <input
           ref={ref}
           type={visible ? 'text' : 'password'}
-          className="w-full px-4 py-2.5 pr-11 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors"
+          className="input w-full pr-11"
           {...props}
         />
         <button

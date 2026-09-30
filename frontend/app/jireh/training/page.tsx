@@ -49,6 +49,7 @@ import {
   type DukeAgent,
 } from '@/lib/duke-api'
 import { parseTrainingFiles, type ParsedFileResult } from '@/lib/parseTrainingFiles'
+import { LoadingRow, PageHeader } from '../../components/ui'
 
 function ConfirmButton({
   label,
@@ -86,22 +87,19 @@ function ConfirmButton({
     }
   }
 
+  // Two-step confirm: armed = waiting for the confirming click
   const toneClasses =
     tone === 'danger'
       ? armed
-        ? 'bg-red-500 text-white hover:bg-red-400'
-        : 'border border-red-500/40 text-red-400 hover:bg-red-500/10'
+        ? 'bg-red-500 border-red-500 text-white hover:bg-red-400'
+        : 'btn-danger'
       : armed
-        ? 'bg-gold-500 text-royal-blue-900 hover:bg-gold-400'
-        : 'border border-gold-500/40 text-gold-500 hover:bg-gold-500/10'
+        ? 'btn-primary ring-2 ring-gold-300/60 ring-offset-2 ring-offset-royal-blue-900'
+        : 'btn-primary'
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={loading}
-      className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${toneClasses}`}
-    >
-      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
+    <button type="button" onClick={handleClick} disabled={loading} aria-live="polite" className={`btn ${toneClasses}`}>
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Icon className="w-4 h-4" aria-hidden="true" />}
       {loading ? 'Working…' : armed ? confirmLabel : label}
     </button>
   )
@@ -140,6 +138,8 @@ export default function AdminTrainingPage() {
   }, [])
 
   const refreshDashboard = () => {
+    // Clear first so a recovered backend doesn't keep showing a stale error
+    setDashboardError(null)
     dukeApi.trainingHistory().then(setHistory, () => setDashboardError('Could not load training history.'))
     dukeApi.systemResources().then(setResources, () => setDashboardError('Could not load system resources.'))
     dukeApi.dashboardSummary().then(setSummary, () => setDashboardError('Could not load dashboard summary.'))
@@ -304,8 +304,7 @@ export default function AdminTrainingPage() {
 
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">Training</h1>
-      <p className="text-gray-400 mb-8">Controls for the in-process retraining pipeline.</p>
+      <PageHeader eyebrow="JIREH · Model" title="Training" description="Fine-tune DUKE's answer model on curated conversations, import training data, and watch every run in real time." />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatusCard
@@ -336,8 +335,8 @@ export default function AdminTrainingPage() {
       {notice && (
         <div
           role="alert"
-          className={`mb-6 p-4 rounded-lg border text-sm flex items-start gap-2.5 ${
-            notice.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'
+          className={`alert mb-6 ${
+            notice.type === 'success' ? 'alert-success' : 'alert-error'
           }`}
         >
           {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
@@ -414,14 +413,14 @@ export default function AdminTrainingPage() {
           <button
             type="button"
             onClick={() => filesInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white/5 border border-gold-500/20 text-gray-200 hover:border-gold-500/50 transition-colors cursor-pointer"
+            className="btn btn-secondary"
           >
             <FileUp className="w-4 h-4" /> Choose files
           </button>
           <button
             type="button"
             onClick={() => folderInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-white/5 border border-gold-500/20 text-gray-200 hover:border-gold-500/50 transition-colors cursor-pointer"
+            className="btn btn-secondary"
           >
             <FolderUp className="w-4 h-4" /> Choose folder
           </button>
@@ -456,10 +455,10 @@ export default function AdminTrainingPage() {
         {uploadNotice && (
           <div
             role="alert"
-            className={`mb-5 p-3 rounded-lg border text-sm flex items-start gap-2.5 ${
+            className={`alert mb-5 ${
               uploadNotice.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : 'bg-red-500/10 border-red-500/30 text-red-300'
+                ? 'alert-success'
+                : 'alert-error'
             }`}
           >
             {uploadNotice.type === 'success' ? (
@@ -476,7 +475,7 @@ export default function AdminTrainingPage() {
             type="button"
             onClick={handleUpload}
             disabled={uploading || allExamples.length === 0 || fileErrors.length === parsedFiles.length}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold bg-gold-500 text-royal-blue-900 hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="btn btn-primary"
           >
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
             {uploading ? 'Importing…' : `Import ${allExamples.length} example(s)`}
@@ -565,7 +564,7 @@ export default function AdminTrainingPage() {
       </p>
 
       {dashboardError && (
-        <div role="alert" className="mb-6 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+        <div role="alert" className="alert mb-6 alert-error">
           {dashboardError}
         </div>
       )}
@@ -608,9 +607,11 @@ export default function AdminTrainingPage() {
           </h3>
           <p className="text-gray-500 text-xs mb-4">Real validation accuracy across every training run ever recorded.</p>
           {!history ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm py-8 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-            </div>
+            dashboardError ? (
+              <p className="py-8 text-sm text-gray-500 text-center">Unavailable right now.</p>
+            ) : (
+              <LoadingRow className="py-8 justify-center" />
+            )
           ) : history.length < 2 ? (
             <p className="text-gray-400 text-sm py-8 text-center">
               Not enough training runs yet for a trend - need at least 2 (have {history.length}).
@@ -640,9 +641,11 @@ export default function AdminTrainingPage() {
           </h3>
           <p className="text-gray-500 text-xs mb-4">Real CPU/memory/disk from the backend process. Refreshes every 25s.</p>
           {!resources ? (
-            <div className="flex items-center gap-2 text-gray-400 text-sm py-8 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-            </div>
+            dashboardError ? (
+              <p className="py-8 text-sm text-gray-500 text-center">Unavailable right now.</p>
+            ) : (
+              <LoadingRow className="py-8 justify-center" />
+            )
           ) : (
             <div className="space-y-4">
               <ResourceBar icon={Cpu} label="CPU" percent={resources.cpu_percent} detail={`${resources.cpu_percent.toFixed(0)}%`} />
@@ -677,9 +680,11 @@ export default function AdminTrainingPage() {
           <HintIcon text="DUKE plus every specialist persona. Tasks = questions answered. Knowledge = how many Knowledge-page chunks are available to that agent specifically (DUKE-global chunks aren't counted per-specialist here). Reputation = a multiplier that raises or lowers that agent's standing based on real performance history - 1.00 is neutral. Status is simply idle/active, not a sign of anything being wrong." />
         </h3>
         {!agents ? (
-          <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading&hellip;
-          </div>
+          dashboardError ? (
+            <p className="py-4 text-sm text-gray-500">Unavailable right now.</p>
+          ) : (
+            <LoadingRow className="py-4" />
+          )
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {agents.map((agent) => {

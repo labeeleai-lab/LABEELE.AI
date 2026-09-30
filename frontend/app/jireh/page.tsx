@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { GraduationCap, Users2, ClipboardList, Code2, ArrowRight, BookOpen } from 'lucide-react'
+import { GraduationCap, Users2, ClipboardList, Code2, ArrowRight, BookOpen, Mail, Users } from 'lucide-react'
 import AdminShell from '../components/AdminShell'
-import GlassCard from '../components/GlassCard'
+import { PageHeader } from '../components/ui'
 import StatusCard from '../components/StatusCard'
 import {
   dukeApi,
@@ -34,11 +34,13 @@ function useFetch<T>(fn: () => Promise<T>) {
 }
 
 const SECTIONS = [
-  { href: '/jireh/training', icon: GraduationCap, title: 'Training', description: 'Trigger retraining, clear the training cache, view stats.' },
-  { href: '/jireh/personas', icon: Users2, title: 'Personas', description: "Edit DUKE's personas at runtime, or create new ones." },
-  { href: '/jireh/knowledge', icon: BookOpen, title: 'Knowledge', description: 'Train DUKE or any agent with documents - retrieved live in real responses.' },
-  { href: '/jireh/annotate', icon: ClipboardList, title: 'Annotate', description: 'Review recent queries and rate/correct responses.' },
-  { href: '/jireh/code', icon: Code2, title: 'Code', description: 'Browse, edit, and commit repo files via GitHub.' },
+  { href: '/jireh/training', icon: GraduationCap, title: 'Training', group: 'Model', description: "Fine-tune DUKE's answer model on curated data and track each run." },
+  { href: '/jireh/personas', icon: Users2, title: 'Personas', group: 'Model', description: "Edit DUKE's personas at runtime, or create new ones." },
+  { href: '/jireh/knowledge', icon: BookOpen, title: 'Knowledge', group: 'Model', description: 'Documents each persona retrieves from live when answering.' },
+  { href: '/jireh/annotate', icon: ClipboardList, title: 'Annotate', group: 'Model', description: 'Review recent queries and rate or correct responses.' },
+  { href: '/jireh/code', icon: Code2, title: 'Code', group: 'Workspace', description: 'Browse, edit, and commit repo files via GitHub.' },
+  { href: '/jireh/messages', icon: Mail, title: 'Messages', group: 'Workspace', description: 'Contact-form messages sent from the public site.' },
+  { href: '/jireh/team', icon: Users, title: 'Team', group: 'Workspace', description: 'Manage who has JIREH admin access.' },
 ]
 
 export default function AdminOverviewPage() {
@@ -47,17 +49,23 @@ export default function AdminOverviewPage() {
   const learning = useFetch<LearningStatus>(() => dukeApi.learningStatus())
   const iac = useFetch<IacStats>(() => dukeApi.iacStats())
 
+  const online = health.data?.status === 'ok'
+
   return (
     <AdminShell>
-      <h1 className="text-3xl font-bold text-white mb-1">JIREH Mode overview</h1>
-      <p className="text-gray-400 mb-8">Live status of the DUKE backend.</p>
+      <PageHeader
+        eyebrow="JIREH · Model operations"
+        title="Overview"
+        description="Live status of the DUKE backend, and every control for training, tuning, and grounding its answers."
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+      <section aria-label="System status" className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatusCard
           label="Backend"
           loading={health.loading}
           error={health.error}
-          value={health.data?.status === 'ok' ? 'Online' : health.data?.status}
+          value={online ? 'Online' : health.data?.status}
+          tone={online ? 'good' : 'warn'}
           detail={health.data?.service}
         />
         <StatusCard
@@ -65,6 +73,7 @@ export default function AdminOverviewPage() {
           loading={model.loading}
           error={model.error}
           value={model.data?.status === 'ready' ? 'Ready' : 'Training'}
+          tone={model.data?.status === 'ready' ? 'good' : 'warn'}
           detail={model.data?.version ? `v${model.data.version}` : undefined}
         />
         <StatusCard
@@ -81,25 +90,32 @@ export default function AdminOverviewPage() {
           value={iac.data ? `${iac.data.validated}/${iac.data.total}` : undefined}
           detail="Adversarial-validated training samples"
         />
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        {SECTIONS.map((section) => {
-          const Icon = section.icon
-          return (
-            <Link key={section.href} href={section.href}>
-              <GlassCard className="h-full group">
-                <Icon className="w-6 h-6 text-gold-500 mb-3" />
-                <h3 className="font-semibold text-white mb-1.5 flex items-center gap-1.5">
-                  {section.title}
-                  <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </h3>
-                <p className="text-gray-400 text-sm">{section.description}</p>
-              </GlassCard>
-            </Link>
-          )
-        })}
-      </div>
+      {(['Model', 'Workspace'] as const).map((group) => (
+        <section key={group} aria-labelledby={`jireh-${group}`} className="mb-8">
+          <h2 id={`jireh-${group}`} className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+            {group}
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {SECTIONS.filter((s) => s.group === group).map((section) => {
+              const Icon = section.icon
+              return (
+                <Link key={section.href} href={section.href} className="surface surface-interactive group flex flex-col p-5">
+                  <span className="mb-4 grid h-9 w-9 place-items-center rounded-lg border border-gold-500/30 bg-gold-500/10 text-gold-400">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="flex items-center gap-1.5 font-semibold text-white">
+                    {section.title}
+                    <ArrowRight className="h-3.5 w-3.5 -translate-x-1 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100" aria-hidden="true" />
+                  </span>
+                  <span className="mt-1 text-sm leading-relaxed text-gray-400">{section.description}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      ))}
     </AdminShell>
   )
 }

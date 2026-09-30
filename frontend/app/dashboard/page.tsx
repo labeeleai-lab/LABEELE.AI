@@ -164,6 +164,7 @@ export default function DashboardPage() {
           loading={health.loading}
           error={health.error}
           value={statusOnline ? 'Online' : health.data?.status}
+          tone={statusOnline ? 'good' : 'warn'}
           detail={health.data?.service}
         />
         <StatusCard
@@ -171,6 +172,7 @@ export default function DashboardPage() {
           loading={model.loading}
           error={model.error}
           value={model.data?.status === 'ready' ? 'Ready' : 'Training'}
+          tone={model.data?.status === 'ready' ? 'good' : 'warn'}
           detail={model.data?.version ? `v${model.data.version}` : undefined}
         />
         <StatusCard

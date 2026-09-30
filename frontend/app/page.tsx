@@ -49,7 +49,7 @@ export default function HomePage() {
     <>
       <SiteHeader />
 
-      <main className="bg-royal-blue-900">
+      <main>
         {/* Hero */}
         <section className="relative px-6 lg:px-8 py-24 lg:py-32 overflow-hidden">
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
@@ -73,7 +73,7 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-4 pt-2">
                 <Link
                   href="/signup"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors"
+                  className="btn btn-primary btn-lg"
                 >
                   Start free trial
                   <ArrowRight className="w-4 h-4" />
@@ -158,10 +158,10 @@ export default function HomePage() {
                     return (
                       <div
                         key={persona.name}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-lg bg-white/5 border border-gold-500/15"
-                        title={persona.name}
+                        className="surface-inset flex flex-col items-center gap-1.5 px-2 py-3"
                       >
-                        <Icon className="w-4 h-4 text-gold-500" />
+                        <Icon className="h-4 w-4 text-gold-500" aria-hidden="true" />
+                        <span className="text-center text-[10px] leading-tight text-gray-400">{persona.name}</span>
                       </div>
                     )
                   })}
@@ -263,7 +263,7 @@ export default function HomePage() {
             </p>
             <Link
               href="/pricing"
-              className="inline-flex items-center gap-2 px-6 py-3.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors"
+              className="btn btn-primary btn-lg"
             >
               View pricing <ArrowRight className="w-4 h-4" />
             </Link>
@@ -283,7 +283,7 @@ export default function HomePage() {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link
                   href="/signup"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors"
+                  className="btn btn-primary btn-lg"
                 >
                   Start free trial <ArrowRight className="w-4 h-4" />
                 </Link>
