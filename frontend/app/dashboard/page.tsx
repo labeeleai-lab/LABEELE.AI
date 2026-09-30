@@ -1,26 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Send, Loader2, Check, AlertCircle, Shield, Brain, Server, Code2, Rocket, Eye, Network, TrendingUp, Paperclip, X } from 'lucide-react'
+import { History, Sparkles } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import GlassCard from '../components/GlassCard'
 import StatusCard from '../components/StatusCard'
-import { dukeApi, DukeApiError, DUKE_API_URL, type HealthStatus, type ModelStatus, type LearningStatus } from '@/lib/duke-api'
+import Composer from '../components/duke/Composer'
+import { AGENTS, getAgent } from '../components/duke/agents'
+import { parseResponse } from '../components/duke/parseResponse'
+import { AgentAvatar, AssistantMessage, ErrorMessage, PendingMessage, UserMessage, type Turn } from '../components/duke/Messages'
+import { dukeApi, DukeApiError, type HealthStatus, type ModelStatus, type LearningStatus } from '@/lib/duke-api'
 import { listRecentQueries, saveQuery, type AgentQuery } from '@/lib/query-history'
-
-// DUKE first and visually distinct - it's the central coordinator, not an eighth
-// specialist. Drawing on every specialist's knowledge at once (see backend
-// /tasks/submit's cross_agent retrieval mode), not just its own slice of it.
-const AGENTS = [
-  { id: 'duke', name: 'DUKE', icon: Network, isCoordinator: true },
-  { id: 'security-expert', name: 'Security Expert', icon: Shield },
-  { id: 'ml-expert', name: 'ML Expert', icon: Brain },
-  { id: 'systems-expert', name: 'Systems Expert', icon: Server },
-  { id: 'backend-expert', name: 'Backend Expert', icon: Code2 },
-  { id: 'devops-expert', name: 'DevOps Expert', icon: Rocket },
-  { id: 'vision-expert', name: 'Vision Expert', icon: Eye },
-  { id: 'advanced-expert', name: 'Emerging Tech Strategist', icon: TrendingUp },
-]
 
 function useBackendStatus() {
   const [health, setHealth] = useState<{ data?: HealthStatus; loading: boolean; error?: string }>({ loading: true })
@@ -45,6 +34,27 @@ function useBackendStatus() {
   return { health, model, learning }
 }
 
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
+const STARTERS = [
+  { agentId: 'duke', text: 'What should a small team prioritize first when hardening a new production API?' },
+  { agentId: 'security-expert', text: 'Explain the principle of least privilege with a practical example.' },
+  { agentId: 'ml-expert', text: 'How do I tell whether my model is overfitting, and what can I do about it?' },
+  { agentId: 'devops-expert', text: 'What is the difference between a canary release and a blue-green deployment?' },
+]
+
+let turnSeq = 0
+const nextId = () => `t${Date.now()}-${turnSeq++}`
+
 export default function DashboardPage() {
   const { health, model, learning } = useBackendStatus()
 
@@ -53,27 +63,11 @@ export default function DashboardPage() {
 
   const [query, setQuery] = useState('')
   const [selectedAgent, setSelectedAgent] = useState<string>(AGENTS[0].id)
-  const [result, setResult] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Kept in sync with backend/coordinator_API/core/document_qa.py - capped
-  // well under Vercel's ~4.5MB serverless request-body limit (this file is
-  // sent base64-encoded, ~4/3 its raw size), not just a file-size opinion.
-  const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
-
-  const readFileAsBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result as string
-        resolve(result.slice(result.indexOf(',') + 1))
-      }
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(file)
-    })
+  const [turns, setTurns] = useState<Turn[]>([])
+  const [inputNotice, setInputNotice] = useState<string | null>(null)
+  const loading = turns.some((t) => t.kind === 'pending')
+  const threadEndRef = useRef<HTMLDivElement>(null)
 
   const refreshHistory = useCallback(async () => {
     setHistory(await listRecentQueries())
@@ -90,60 +84,86 @@ export default function DashboardPage() {
       })
   }, [refreshHistory])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!query.trim() || loading) return
+  // Keep the newest message in view as the conversation grows
+  useEffect(() => {
+    if (!turns.length) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    threadEndRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+  }, [turns])
 
-    setLoading(true)
-    setError(null)
+  const ask = async (text: string, agentId: string, file: File | null) => {
+    if (!text.trim() || loading) return
+    const pendingId = nextId()
+    const startedAt = Date.now()
+    setTurns((prev) => [
+      ...prev,
+      { kind: 'user', id: nextId(), agentId, text, attachment: file?.name, at: new Date() },
+      { kind: 'pending', id: pendingId, agentId, startedAt },
+    ])
+    setQuery('')
+    setAttachedFile(null)
+    setInputNotice(null)
 
+    let finished: Turn
     try {
       let attachment_base64: string | undefined
       let attachment_name: string | undefined
-      if (attachedFile) {
-        attachment_base64 = await readFileAsBase64(attachedFile)
-        attachment_name = attachedFile.name
+      if (file) {
+        attachment_base64 = await readFileAsBase64(file)
+        attachment_name = file.name
       }
 
       const data = await dukeApi.submitTask({
-        description: query,
+        description: text,
         complexity: 5,
-        target_agent: selectedAgent,
+        target_agent: agentId,
         buyer_id: userEmail ?? 'dashboard-user',
         attachment_base64,
         attachment_name,
       })
 
       const response = data.response || 'No response received'
-      setResult(response)
-      setQuery('')
-      setAttachedFile(null)
+      finished = {
+        kind: 'assistant',
+        id: pendingId,
+        agentId,
+        parsed: parseResponse(response, data.response_source, data.sources),
+        at: new Date(),
+        seconds: (Date.now() - startedAt) / 1000,
+      }
 
       if (userEmail) {
-        await saveQuery(selectedAgent, query, response)
-        refreshHistory()
+        saveQuery(agentId, text, response).then(refreshHistory)
       }
     } catch (err) {
-      setError(err instanceof DukeApiError ? err.message : 'Query failed')
-      setResult(null)
-    } finally {
-      setLoading(false)
+      finished = {
+        kind: 'error',
+        id: pendingId,
+        agentId,
+        message: err instanceof DukeApiError ? err.message : 'Query failed',
+        retryText: text,
+      }
     }
+    setTurns((prev) => prev.map((t) => (t.id === pendingId ? finished : t)))
   }
+
+  const statusOnline = health.data?.status === 'ok'
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Dashboard</h1>
-        <p className="text-gray-400">{userEmail ? `Signed in as ${userEmail}` : 'Deploy a specialist agent for any task.'}</p>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-3xl font-bold text-white">Dashboard</h1>
+          <p className="text-gray-400">{userEmail ? `Signed in as ${userEmail}` : 'Deploy a specialist agent for any task.'}</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatusCard
           label="Backend"
           loading={health.loading}
           error={health.error}
-          value={health.data?.status === 'ok' ? 'Online' : health.data?.status}
+          value={statusOnline ? 'Online' : health.data?.status}
           detail={health.data?.service}
         />
         <StatusCard
@@ -162,166 +182,144 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <GlassCard>
-            <h2 className="text-lg font-semibold text-white mb-5">Ask DUKE or a specialist</h2>
-
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-300 mb-3">
-                Who should answer? <span className="text-gray-500 font-normal">(DUKE draws on every specialist&apos;s knowledge at once)</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {AGENTS.map((agent) => {
-                  const Icon = agent.icon
-                  const active = selectedAgent === agent.id
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => setSelectedAgent(agent.id)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                        active
-                          ? 'bg-gold-500 text-royal-blue-900'
-                          : agent.isCoordinator
-                            ? 'bg-gold-500/10 border border-gold-500/50 text-gold-400 hover:border-gold-500'
-                            : 'bg-white/5 border border-gold-500/20 text-gray-300 hover:border-gold-500/50'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      {agent.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="query" className="block text-sm font-medium text-gray-300 mb-2">
-                  Your question
-                </label>
-                <textarea
-                  id="query"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Describe what you need the specialist to help with... (paste a link or attach a file to ask about it)"
-                  rows={5}
-                  disabled={loading}
-                  className="w-full px-4 py-3 bg-white/5 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 transition-colors resize-none"
-                />
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt,.md,.csv,.json,.log"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file && file.size > MAX_ATTACHMENT_BYTES) {
-                    setError('That file is too large (3MB limit).')
-                  } else if (file) {
-                    setAttachedFile(file)
-                    setError(null)
-                  }
-                  e.target.value = ''
-                }}
-              />
-
-              <div className="flex items-center gap-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <section className="min-w-0 space-y-4 lg:col-span-2" aria-label="DUKE workspace">
+          <div className="glass-panel overflow-hidden">
+            <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3 sm:px-5">
+              <span className="relative flex h-2 w-2" aria-hidden="true">
+                {statusOnline && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />}
+                <span className={`relative inline-flex h-2 w-2 rounded-full ${statusOnline ? 'bg-emerald-400' : health.loading ? 'bg-gray-500' : 'bg-amber-400'}`} />
+              </span>
+              <h2 className="text-sm font-semibold text-white">DUKE workspace</h2>
+              <span className="text-xs text-gray-500">
+                {health.loading ? 'Checking status…' : statusOnline ? 'Online' : 'Backend unavailable'}
+              </span>
+              {turns.length > 0 && !loading && (
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-white/5 border border-gold-500/20 text-gray-300 hover:border-gold-500/50 transition-colors disabled:opacity-50 cursor-pointer"
+                  onClick={() => setTurns([])}
+                  className="ml-auto rounded-md px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-white/5 hover:text-gold-400 cursor-pointer"
                 >
-                  <Paperclip className="w-3.5 h-3.5" /> Attach a file
+                  New conversation
                 </button>
-                {attachedFile && (
-                  <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs bg-gold-500/10 border border-gold-500/30 text-gold-300">
-                    {attachedFile.name}
-                    <button
-                      type="button"
-                      onClick={() => setAttachedFile(null)}
-                      aria-label="Remove attachment"
-                      className="text-gold-400 hover:text-gold-200 cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || !query.trim()}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gold-500 text-royal-blue-900 font-semibold rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Processing&hellip;
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" /> Send query
-                  </>
-                )}
-              </button>
-              {loading && (
-                <p className="text-center text-xs text-gray-500">
-                  The specialist model runs on-demand and can take up to a minute to respond.
-                </p>
               )}
-            </form>
-          </GlassCard>
+            </div>
 
-          {error && (
-            <GlassCard className="border-red-500/40">
-              <h3 className="font-semibold text-red-400 mb-3 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> Something went wrong
-              </h3>
-              <p className="text-red-300 text-sm">{error}</p>
-              <p className="text-gray-500 text-xs mt-2">Backend: {DUKE_API_URL}</p>
-            </GlassCard>
+            <div className="space-y-5 px-3 py-5 sm:px-5" aria-live="polite" aria-relevant="additions">
+              {turns.length === 0 ? (
+                <div className="px-1 py-6 text-center sm:py-10">
+                  <span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-gold-500/40 bg-gradient-to-br from-gold-500/25 to-gold-500/5 text-gold-400">
+                    <Sparkles className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <p className="text-lg font-semibold text-white">What can DUKE help you with?</p>
+                  <p className="mx-auto mt-1 max-w-md text-sm text-gray-400">
+                    Ask DUKE to coordinate across every specialist, or pick one directly below. Answers cite the knowledge-base
+                    sources they draw on.
+                  </p>
+                  <div className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-2.5 text-left sm:grid-cols-2">
+                    {STARTERS.map((s) => {
+                      const agent = getAgent(s.agentId)
+                      return (
+                        <button
+                          key={s.text}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAgent(s.agentId)
+                            setQuery(s.text)
+                          }}
+                          className="glass-raised group flex items-start gap-3 p-3 text-left transition-colors hover:border-gold-500/40 cursor-pointer"
+                        >
+                          <AgentAvatar agent={agent} size="sm" />
+                          <span className="min-w-0">
+                            <span className="block text-[11px] font-medium uppercase tracking-wider text-gray-500 group-hover:text-gold-400">
+                              {agent.name}
+                            </span>
+                            <span className="mt-0.5 block text-sm text-gray-200">{s.text}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                turns.map((turn) => {
+                  switch (turn.kind) {
+                    case 'user':
+                      return <UserMessage key={turn.id} turn={turn} />
+                    case 'pending':
+                      return <PendingMessage key={turn.id} turn={turn} />
+                    case 'assistant':
+                      return <AssistantMessage key={turn.id} turn={turn} />
+                    case 'error':
+                      return (
+                        <ErrorMessage
+                          key={turn.id}
+                          turn={turn}
+                          disabled={loading}
+                          onRetry={() => ask(turn.retryText, turn.agentId, null)}
+                        />
+                      )
+                  }
+                })
+              )}
+              <div ref={threadEndRef} />
+            </div>
+          </div>
+
+          {inputNotice && (
+            <p role="alert" className="glass-raised border-amber-400/30 px-4 py-2.5 text-sm text-amber-100">
+              {inputNotice}
+            </p>
           )}
 
-          {result && !error && (
-            <GlassCard>
-              <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-400" /> Response
-              </h3>
-              <p className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed">{result}</p>
-            </GlassCard>
-          )}
-        </div>
+          <Composer
+            query={query}
+            onQueryChange={setQuery}
+            selectedAgent={selectedAgent}
+            onAgentChange={setSelectedAgent}
+            attachedFile={attachedFile}
+            onAttach={(f) => {
+              setAttachedFile(f)
+              setInputNotice(null)
+            }}
+            onAttachError={setInputNotice}
+            onSubmit={() => ask(query, selectedAgent, attachedFile)}
+            loading={loading}
+          />
+        </section>
 
-        <GlassCard>
-          <h2 className="text-lg font-semibold text-white mb-4">Recent queries</h2>
-          <div className="space-y-3 max-h-[28rem] overflow-y-auto">
+        <aside className="glass-panel h-fit p-4 sm:p-5" aria-label="Recent queries">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+            <History className="h-4 w-4 text-gold-500" aria-hidden="true" /> Recent queries
+          </h2>
+          <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
             {history.length === 0 ? (
-              <p className="text-gray-400 text-sm">No queries yet - ask something to get started.</p>
+              <p className="text-sm text-gray-400">No queries yet - ask something to get started.</p>
             ) : (
               history.map((item) => {
-                const agent = AGENTS.find((a) => a.id === item.agent_id)
+                const agent = getAgent(item.agent_id)
                 return (
                   <button
                     key={item.id}
+                    type="button"
                     onClick={() => {
                       setQuery(item.query)
                       setSelectedAgent(item.agent_id)
                     }}
-                    className="w-full text-left p-3 bg-white/5 border border-gold-500/15 rounded-lg hover:border-gold-500/50 transition-colors cursor-pointer"
+                    className="glass-raised flex w-full items-start gap-2.5 p-3 text-left transition-colors hover:border-gold-500/40 cursor-pointer"
                   >
-                    <p className="text-xs text-gold-500 font-medium mb-1">{agent?.name ?? item.agent_id}</p>
-                    <p className="text-xs text-gray-300 line-clamp-2">{item.query}</p>
-                    <p className="text-xs text-gray-500 mt-1">{new Date(item.created_at).toLocaleString()}</p>
+                    <AgentAvatar agent={agent} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-medium text-gold-400">{agent.name}</span>
+                      <span className="mt-0.5 block text-xs text-gray-300 line-clamp-2">{item.query}</span>
+                      <span className="mt-1 block text-[11px] text-gray-500">{new Date(item.created_at).toLocaleString()}</span>
+                    </span>
                   </button>
                 )
               })
             )}
           </div>
-        </GlassCard>
+        </aside>
       </div>
     </AppShell>
   )

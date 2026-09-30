@@ -66,6 +66,10 @@ export interface SubmitTaskResponse {
   request_id: string
   status: string
   price_satoshis: number
+  // Which path produced the answer (duke_local, math_solver, grounding, ...)
+  response_source?: string
+  // Knowledge-base passages retrieved for this answer
+  sources?: { source: string; persona_id: string | null; similarity?: number }[]
 }
 
 export interface DispatchRequest {
@@ -370,7 +374,9 @@ export const dukeApi = {
     request<SubmitTaskResponse>(
       '/tasks/submit',
       { method: 'POST', body: JSON.stringify(body) },
-      90_000,
+      // Complete answers on DUKE's CPU model can run past 90s; the
+      // /api/duke proxy allows 180s too.
+      180_000,
     ),
 
   dispatch: (body: DispatchRequest) =>

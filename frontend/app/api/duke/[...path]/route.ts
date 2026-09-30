@@ -22,7 +22,7 @@ async function proxy(req: NextRequest, path: string[], method: string) {
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 90_000)
+  const timeout = setTimeout(() => controller.abort(), 180_000)
 
   try {
     const res = await dukeFetch(targetPath, { ...init, signal: controller.signal })

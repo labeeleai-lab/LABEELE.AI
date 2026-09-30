@@ -47,6 +47,29 @@ module.exports = {
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'message-in': 'message-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
+        shimmer: 'shimmer 1.8s linear infinite',
+        'dot-bounce': 'dot-bounce 1.2s ease-in-out infinite',
+      },
+      keyframes: {
+        'message-in': {
+          from: { opacity: '0', transform: 'translateY(6px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        shimmer: {
+          from: { backgroundPosition: '-200% 0' },
+          to: { backgroundPosition: '200% 0' },
+        },
+        'dot-bounce': {
+          '0%, 80%, 100%': { opacity: '0.25', transform: 'translateY(0)' },
+          '40%': { opacity: '1', transform: 'translateY(-2px)' },
+        },
+      },
+      boxShadow: {
+        // Glass depth: a hairline top highlight + a soft, deep drop shadow
+        glass: 'inset 0 1px 0 0 rgba(255,255,255,0.06), 0 10px 30px -12px rgba(3,8,28,0.7)',
+        'glass-lg': 'inset 0 1px 0 0 rgba(255,255,255,0.08), 0 24px 48px -20px rgba(3,8,28,0.85)',
+        'gold-ring': '0 0 0 1px rgba(212,175,55,0.55), 0 0 0 4px rgba(212,175,55,0.12)',
       },
     },
   },

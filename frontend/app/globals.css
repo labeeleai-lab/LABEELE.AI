@@ -68,6 +68,50 @@ body {
   border-color: var(--primary-gold);
 }
 
+/* ========== DUKE WORKSPACE GLASS SYSTEM ==========
+   Three surface levels, all on the existing royal-blue/gold palette:
+   .glass-panel   - primary container (workspace, composer)
+   .glass-raised  - a message/card sitting on a panel
+   .glass-inset   - wells inside a card (code blocks, inputs, tables)
+   Blur is kept moderate (12-16px) so text over it stays crisp. */
+@layer components {
+  .glass-panel {
+    background: linear-gradient(180deg, rgba(31, 58, 147, 0.16) 0%, rgba(15, 28, 77, 0.28) 100%);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1rem;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 24px 48px -20px rgba(3, 8, 28, 0.85);
+  }
+  .glass-raised {
+    background: rgba(255, 255, 255, 0.035);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 0.875rem;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 10px 30px -12px rgba(3, 8, 28, 0.7);
+  }
+  .glass-inset {
+    background: rgba(5, 10, 30, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 0.625rem;
+  }
+  .shimmer-line {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(212,175,55,0.14) 50%, rgba(255,255,255,0.04) 100%);
+    background-size: 200% 100%;
+  }
+}
+
+/* The composer's textarea sits inside a glass frame that owns the focus
+   styling (via :focus-within) - opt it out of the global input focus box. */
+textarea.composer-input:focus,
+textarea.composer-input:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent !important;
+}
+
 /* ========== UTILITIES FROM DASHBOARD ========== */
 .user-badge {
   width: 8px;
