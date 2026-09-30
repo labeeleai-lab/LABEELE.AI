@@ -122,7 +122,7 @@ class DukeGenerativeBrain:
                 self.model = None
                 self.mode = "unavailable"
 
-    def generate_response(self, prompt, max_length=256):
+    def generate_response(self, prompt, max_length=256, system_prompt=None):
         if not self.model or not self.tokenizer:
             return "Duke Brain is currently offline or initializing."
 
@@ -141,8 +141,14 @@ class DukeGenerativeBrain:
             # TinyLlama-specific and would silently miscommunicate with any
             # other model, degrading answer quality without ever raising an
             # error.
+            # The persona's instructions go in the system role (where
+            # instruction-tuned models like Qwen expect them to carry the
+            # most weight), not mixed into the user turn with the question.
+            system_content = f"Today's date is {today_str}."
+            if system_prompt:
+                system_content = f"{system_prompt}\n\n{system_content}"
             messages = [
-                {"role": "system", "content": f"Today's date is {today_str}."},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt},
             ]
             try:
@@ -153,28 +159,28 @@ class DukeGenerativeBrain:
                 # Emergency-fallback models (distilgpt2) have no chat
                 # template at all - plain concatenation is the best this
                 # non-instruct model could use anyway.
-                chat_prompt = f"Today's date is {today_str}.\n{prompt}\n"
+                chat_prompt = f"{system_content}\n{prompt}\n"
             inputs = self.tokenizer(chat_prompt, return_tensors="pt", add_special_tokens=False).to(self.device)
 
             with torch.no_grad():
                 outputs = self.model.generate(
                     inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
-                    # Was 300 - on this CPU-only deployment, generation time
-                    # scales directly with token count, and live testing
-                    # showed the model rambling well past the point of
-                    # saying anything new by ~200 tokens anyway. Cutting
-                    # this is a direct, honest latency reduction (roughly
-                    # a third faster worst-case), not a workaround.
-                    max_new_tokens=200,
-                    temperature=0.7,
-                    top_p=0.9,
-                    do_sample=True,
-                    # Curbs repetitive filler that burns the token budget
-                    # without adding content, which also helps it reach a
-                    # natural stop sooner.
-                    repetition_penalty=1.3,
-                    no_repeat_ngram_size=4,
+                    # 200 cut real answers off mid-word (seen live: "...
+                    # simultaneously preservi"). 350 leaves room for a
+                    # complete explanation; the model still stops on its
+                    # own well before that for short questions.
+                    max_new_tokens=350,
+                    # Greedy decoding: factual Q&A wants the model's most
+                    # likely answer, not a random sample (the old
+                    # temperature=0.7 sampling added creative drift).
+                    do_sample=False,
+                    # Mild penalty only. The old 1.3 + no_repeat_ngram_size=4
+                    # forbade repeating any 4-word phrase, so the model was
+                    # forced into odd synonyms for terms it legitimately
+                    # needed twice ("public key", "training data") - the
+                    # source of its stilted, run-on wording.
+                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.eos_token_id
                 )
 

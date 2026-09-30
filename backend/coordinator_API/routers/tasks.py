@@ -21,6 +21,7 @@ persona-driven task response generation).
 """
 import asyncio
 import json
+import re
 import os
 import uuid
 from datetime import datetime, timezone
@@ -57,13 +58,54 @@ router = APIRouter()
 GENERATION_LOCK_WAIT_SECONDS = 30
 
 
-def _generate_with_lock(prompt: str):
+def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None):
     if not state.model_lock.acquire(timeout=GENERATION_LOCK_WAIT_SECONDS):
         return None
     try:
-        return state.duke_brain.generate_response(prompt)
+        return state.duke_brain.generate_response(prompt, system_prompt=system_prompt)
     finally:
         state.model_lock.release()
+
+
+# Total characters of knowledge-base passages placed in front of the model.
+# Four ~1,000-1,600 char passages fit; the old flat 6,000-char cap on the
+# whole prompt (persona text included) silently chopped the last passage.
+MAX_REFERENCE_CHARS = 6000
+
+# A retrieved passage this similar to the question counts as a real match
+# worth citing; weaker ones are still given to the model as context but
+# aren't presented to the user as "the source" of the answer.
+CITE_MIN_SIMILARITY = 0.55
+
+_PART_SUFFIX = re.compile(r"\s*\(part \d+ of \d+\)\s*$", re.IGNORECASE)
+
+
+def _source_title(source_name: str) -> str:
+    """Knowledge-base uploads of long books are split into
+    "Title (part 3 of 17)" - users should see just the book's title."""
+    return _PART_SUFFIX.sub("", source_name or "").strip()
+
+
+def _persona_label(persona_id):
+    if persona_id is None:
+        return "DUKE Global knowledge base"
+    return SPECIALIST_PERSONAS.get(persona_id, {}).get("name", persona_id)
+
+
+def _citation_footer(chunks) -> str:
+    """Sources line built by code from what retrieval actually returned -
+    never written by the model, so it can't cite a book that wasn't used.
+    With no strong match, says so honestly instead."""
+    titles = []
+    for c in chunks:
+        if getattr(c, "similarity", 0.0) >= CITE_MIN_SIMILARITY:
+            t = _source_title(c.source_name)
+            if t and t not in titles:
+                titles.append(t)
+    if titles:
+        return "\n\n📚 Sources: " + "; ".join(titles)
+    return ("\n\nℹ️ I couldn't find this in my knowledge base, so this answer is based on "
+            "general knowledge - please double-check anything important.")
 
 
 # ✅ CREATE TASK ENDPOINT (legacy JWT)
@@ -188,6 +230,7 @@ async def submit_task(
 
         # 2. Execution Logic (Memory -> Duke)
         final_response = None
+        training_response = None
         response_source = "unknown"
 
         # A. Check Cache first (never in eval mode - a scorecard must measure
@@ -288,68 +331,66 @@ async def submit_task(
                 # see backend/knowledge.py) replace the old bare "Persona: X\nTask: Y"
                 # string - this is the actual RAG wiring for the knowledge system.
                 _, persona = get_safe_persona(target_agent)
-                prompt = persona["system_prompt"]
+                system_prompt = persona["system_prompt"]
+                chunks = []
 
                 try:
                     is_duke = target_agent == "duke"
                     chunks = knowledge_lib.retrieve_relevant_chunks(
                         db, KnowledgeChunk, target_agent, task_data.description,
-                        # Fewer chunks for DUKE, not more - this small local model has a
-                        # strong tendency to paraphrase/echo whatever context it's given
-                        # (likely a side effect of the retrieval-alignment training
-                        # objective in RealDukeMLPipeline, which rewards output that's
-                        # textually close to retrieved chunks) instead of reasoning about
-                        # the actual question. Less material means less to latch onto.
-                        top_k=4 if is_duke else 4,
+                        top_k=4,
                         cross_agent=is_duke,
                     )
                     retrieved_sources = [
-                        {"source": c.source_name, "persona_id": c.persona_id} for c in chunks
+                        {"source": c.source_name, "persona_id": c.persona_id,
+                         "similarity": round(getattr(c, "similarity", 0.0), 3)}
+                        for c in chunks
                     ]
-                    if chunks:
-                        # Plain-text labels, not bracketed markers - this small local model
-                        # tends to echo bracket-wrapped headers verbatim (the same failure
-                        # mode as the old bracket-template system prompts), so the RAG
-                        # context needs the same plain-language treatment.
-                        if is_duke:
-                            # Cross-agent mode: attribute each chunk to the specialist it
-                            # came from so DUKE has real structure to synthesize from,
-                            # and the response can honestly reflect which specialists
-                            # were actually consulted (not a fabricated summary).
-                            def _label(pid):
-                                if pid is None:
-                                    return "DUKE Global"
-                                return SPECIALIST_PERSONAS.get(pid, {}).get("name", pid)
-                            context_block = "\n\n".join(
-                                f"From the {_label(c.persona_id)}: {c.content}" for c in chunks
-                            )
-                        else:
-                            context_block = "\n\n".join(c.content for c in chunks)
-                        prompt += (
-                            "\n\nBackground context - use only what is actually relevant to "
-                            "the question below, in your own reasoning. Do not quote, list, "
-                            f"summarize, or repeat this material or its labels:\n{context_block}"
-                        )
                 except Exception as retrieval_error:
                     logger.warning(f"⚠️ Knowledge retrieval failed, continuing without it: {retrieval_error}")
 
-                # The question is appended last but must never be the part
-                # that gets cut - cap the context that comes BEFORE it, not
-                # the assembled string afterward, or a long knowledge
-                # context could silently truncate the actual question away.
-                question_suffix = f"\n\nAnswer this question directly, in your own words: {task_data.description}"
-                max_context_chars = 6000 - len(question_suffix)
-                if len(prompt) > max_context_chars:
-                    prompt = prompt[:max_context_chars]
-                prompt += question_suffix
+                # The question goes last and is never the part that gets cut -
+                # reference passages are added whole, best match first, only
+                # while they fit the budget (a passage chopped mid-sentence
+                # is worse than no passage).
+                question_block = (
+                    f"\n\nQuestion: {task_data.description}\n\n"
+                    "Answer the question accurately and completely. When the reference "
+                    "material above is relevant, base your answer on it - use its facts "
+                    "and terminology directly. If the question asks for specific facts "
+                    "that are not in the reference material and that you could not know "
+                    "(for example this company's private or internal data, credentials, "
+                    "people, or live numbers), say plainly that you don't have that "
+                    "information instead of guessing."
+                )
+                used_chunks, blocks, budget = [], [], MAX_REFERENCE_CHARS
+                for c in chunks:
+                    label = f"[{_source_title(c.source_name)}]"
+                    if target_agent == "duke":
+                        label += f" (from the {_persona_label(c.persona_id)})"
+                    block = f"{label}\n{c.content}"
+                    if len(block) > budget:
+                        continue
+                    blocks.append(block)
+                    used_chunks.append(c)
+                    budget -= len(block)
+                if blocks:
+                    prompt = "Reference material from your knowledge base:\n\n" + "\n\n".join(blocks) + question_block
+                else:
+                    prompt = question_block.lstrip()
 
                 if state.duke_brain and state.duke_brain.model is not None:
-                    raw_response = await asyncio.to_thread(_generate_with_lock, prompt)
+                    raw_response = await asyncio.to_thread(_generate_with_lock, prompt, system_prompt)
                     if raw_response is None:
                         final_response = ("Error: DUKE is busy right now (most likely a training run is in "
                                           "progress). Please try again in a few minutes.")
                     else:
                         final_response = f"⚡ [DUKE-LOCAL]: {raw_response}"
+                        # Training data keeps the model's own words only - the
+                        # footer below is added by code, and the model must not
+                        # learn to write (and invent) citation lines itself.
+                        training_response = final_response
+                        final_response += _citation_footer(used_chunks)
                         response_source = "duke_local"
                         logger.info("🧠 Duke processed task successfully on Local/GPU.")
                 else:
@@ -391,7 +432,7 @@ async def submit_task(
             id=str(uuid.uuid4()),
             task_id=task_id,
             input_data=json.dumps({"description": task_data.description, "complexity": task_data.complexity}),
-            output_data=json.dumps({"result": final_response, "agent": target_agent}),
+            output_data=json.dumps({"result": training_response or final_response, "agent": target_agent}),
             success=True,
             agent_name=target_agent,
             persona_type=target_agent
@@ -453,7 +494,9 @@ async def submit_task(
             "agent_name": target_agent,
             "request_id": task_id,
             "status": "completed",
-            "price_satoshis": price
+            "price_satoshis": price,
+            "sources": retrieved_sources,
+            "response_source": response_source,
         }
 
     except HTTPException:

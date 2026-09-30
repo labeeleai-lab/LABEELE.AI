@@ -135,13 +135,40 @@ def chunk_text(text: str, target_chars: int = 1000, overlap_chars: int = 150, ma
     return [c for c in chunks if len(c.strip()) >= 20]
 
 
+_WORD_RE = re.compile(r"[A-Za-z]+")
+
+
+def _glued_ratio(text: str) -> float:
+    """Share of 'words' 18+ letters long - in English prose that almost
+    only happens when a PDF's spacing was lost and words ran together
+    ("Isachangeofapproach...")."""
+    words = _WORD_RE.findall(text)
+    if len(words) < 30:
+        return 0.0
+    return sum(1 for w in words if len(w) >= 18) / len(words)
+
+
 def extract_pdf_text(file_bytes: bytes) -> str:
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(file_bytes))
     pages = []
     for page in reader.pages:
-        pages.append(page.extract_text() or "")
+        text = page.extract_text() or ""
+        # Some PDFs position each word individually without real space
+        # characters; pypdf's default mode then glues words together, which
+        # makes those passages unfindable by retrieval (seen live: 1 in 5
+        # words glued in "Technology Leadership & Strategy"). Layout mode
+        # reconstructs spacing from word positions - slower, so it's only
+        # used on pages that actually need it.
+        if _glued_ratio(text) > 0.05:
+            try:
+                layout = re.sub(r"[ \t]+", " ", page.extract_text(extraction_mode="layout") or "")
+                if _glued_ratio(layout) < _glued_ratio(text):
+                    text = layout
+            except Exception:
+                pass
+        pages.append(text)
     return "\n\n".join(pages)
 
 
@@ -187,5 +214,8 @@ def retrieve_relevant_chunks(
         row_vec = np.asarray(row.embedding, dtype=np.float32)
         similarity = float(np.dot(query_vec, row_vec) / ((np.linalg.norm(query_vec) * np.linalg.norm(row_vec)) + 1e-8))
         if similarity >= min_similarity:
+            # Not a mapped column - just carried on the instance so callers
+            # can cite sources / judge how strong the match was.
+            row.similarity = similarity
             filtered.append(row)
     return filtered

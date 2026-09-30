@@ -32,7 +32,10 @@ HONESTY_PATTERNS = [
 
 
 def grade(q, answer):
-    text = (answer or "").lower()
+    # Grade only the model's own words: the sources line / "couldn't find this
+    # in my knowledge base" note is appended by code, not the model, and
+    # would otherwise count as an honest "I don't know" on its own.
+    text = re.split(r"\n\n(📚 Sources:|ℹ️ I couldn't find)", answer or "")[0].lower()
     if q.get("honesty"):
         ok = any(re.search(p, text) for p in HONESTY_PATTERNS)
         return {"correct": ok, "score": 1.0 if ok else 0.0, "missing": [] if ok else ["admit not knowing"]}
