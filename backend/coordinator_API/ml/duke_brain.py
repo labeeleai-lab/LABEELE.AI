@@ -144,8 +144,10 @@ class DukeGenerativeBrain:
                 self.model = None
                 self.mode = "unavailable"
 
-    def generate_response(self, prompt, max_length=256, system_prompt=None, on_text=None):
-        """on_text: optional callback receiving text as it's generated."""
+    def generate_response(self, prompt, max_length=256, system_prompt=None, on_text=None, examples=None):
+        """on_text: optional callback receiving text as it's generated.
+        examples: optional [(user_text, assistant_text), ...] worked examples
+        placed before the real request (few-shot)."""
         self.last_hit_token_limit = False
         if not self.model or not self.tokenizer:
             return "Duke Brain is currently offline or initializing."
@@ -171,10 +173,11 @@ class DukeGenerativeBrain:
             system_content = f"Today's date is {today_str}."
             if system_prompt:
                 system_content = f"{system_prompt}\n\n{system_content}"
-            messages = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": prompt},
-            ]
+            messages = [{"role": "system", "content": system_content}]
+            for example_in, example_out in examples or []:
+                messages.append({"role": "user", "content": example_in})
+                messages.append({"role": "assistant", "content": example_out})
+            messages.append({"role": "user", "content": prompt})
             try:
                 chat_prompt = self.tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True

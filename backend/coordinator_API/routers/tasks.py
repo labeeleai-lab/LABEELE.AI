@@ -60,7 +60,7 @@ GENERATION_LOCK_WAIT_SECONDS = 30
 
 
 def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None, on_text=None,
-                        wait_seconds: float = GENERATION_LOCK_WAIT_SECONDS, on_start=None):
+                        wait_seconds: float = GENERATION_LOCK_WAIT_SECONDS, on_start=None, examples=None):
     """Returns (answer, hit_token_limit), or (None, False) if the model
     stayed busy past the wait. on_start runs once the model is ours."""
     if not state.model_lock.acquire(timeout=wait_seconds):
@@ -68,7 +68,7 @@ def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None, on_tex
     try:
         if on_start:
             on_start()
-        answer = state.duke_brain.generate_response(prompt, system_prompt=system_prompt, on_text=on_text)
+        answer = state.duke_brain.generate_response(prompt, system_prompt=system_prompt, on_text=on_text, examples=examples)
         return answer, bool(getattr(state.duke_brain, "last_hit_token_limit", False))
     finally:
         state.model_lock.release()
@@ -176,9 +176,35 @@ async def _run_answer_job(job_id, prompt, system_prompt, used_chunks, task_data,
         job.update(done=True, status="error", error="DUKE couldn't finish this answer. Please try again.")
 
 
+# Plain-language rewrite prompt, tuned against the real model on a real
+# long answer: explicit structure rules plus one worked example (unrelated
+# topic, so no facts carry over) moved this small model from lightly
+# reworded jargon to genuinely everyday language.
 SIMPLIFY_SYSTEM = (
-    "You explain technical material to people with no technical background. "
-    "You are clear, warm, and accurate, and you never invent facts."
+    "You explain technical topics to people with no technical background, like a patient teacher "
+    "talking to a smart friend who has never worked in technology. You are clear, warm, and accurate, "
+    "and you never invent facts."
+)
+SIMPLIFY_PROMPT = """Rewrite the answer below so that someone with no technical background can fully understand it.
+
+Rules:
+- Start with one or two sentences that explain the main idea in everyday words. An everyday comparison is welcome if it truly fits.
+- Then list the key points or steps as a bulleted list, one short bullet each, in the same order as the original.
+- Every technical term must either be replaced with plain words, or be followed right away by a short plain explanation in parentheses. For example: "validation data (practice questions the model has never seen)".
+- Keep every important point from the original. Do not add new facts. Do not mention that this is a rewrite.
+
+Answer to rewrite:
+{text}"""
+SIMPLIFY_EXAMPLE = (
+    SIMPLIFY_PROMPT.format(text=(
+        "To reduce latency, deploy a CDN so static assets are cached at edge locations, and enable "
+        "HTTP/2 multiplexing so multiple requests share one TCP connection."
+    )),
+    "Your website feels slow because every file travels a long way to reach each visitor. Two fixes help:\n\n"
+    "- **Keep copies close to your visitors.** A content delivery network (a set of servers spread around "
+    "the world) stores copies of your images and files near the people using them, so they load faster.\n"
+    "- **Send many files through one connection.** A newer web standard (HTTP/2) lets the browser download "
+    "many files at once over a single connection, instead of opening a new one for each file.",
 )
 
 
@@ -188,20 +214,14 @@ async def _run_simplify_job(job_id, text):
     def on_text(t):
         job["text"] += t
 
-    prompt = (
-        "Rewrite the answer below for someone with no technical background.\n"
-        "- Use plain, everyday language and short sentences.\n"
-        "- Replace jargon with simple words, or explain a technical term in a few words the first time it is needed.\n"
-        "- Keep every key point and any steps, in the same order. Keep lists as lists.\n"
-        "- Do not add facts that are not in the original, and do not mention that this is a rewrite.\n\n"
-        f"Answer to rewrite:\n{text}"
-    )
+    prompt = SIMPLIFY_PROMPT.format(text=text)
+
     def on_start():
         job["status"] = "generating"
 
     try:
         raw, hit_limit = await asyncio.to_thread(
-            _generate_with_lock, prompt, SIMPLIFY_SYSTEM, on_text, JOB_LOCK_WAIT_SECONDS, on_start
+            _generate_with_lock, prompt, SIMPLIFY_SYSTEM, on_text, JOB_LOCK_WAIT_SECONDS, on_start, [SIMPLIFY_EXAMPLE]
         )
         if raw is None:
             job.update(done=True, status="error", error=BUSY_MESSAGE.removeprefix("Error: "))
