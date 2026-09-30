@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
@@ -143,11 +143,15 @@ async def deploy_agent(agent_id: str, task: TaskCreate, request: Request):
 async def submit_task(
     task_data: TaskSubmission,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_admin_secret: Optional[str] = Header(default=None, alias="X-Admin-Secret"),
 ):
     """
     Processes a task using the local Duke Brain only - no external AI APIs.
     """
+    if task_data.eval_mode:
+        require_admin_secret(x_admin_secret)  # raises 403/503 - scorecard mode is admin-only
+    retrieved_sources = []
     try:
         logger.info(f"📥 RECEIVED TASK: {task_data.description[:60]}...")
 
@@ -186,8 +190,11 @@ async def submit_task(
         final_response = None
         response_source = "unknown"
 
-        # A. Check Cache first
+        # A. Check Cache first (never in eval mode - a scorecard must measure
+        # the current brain, not replay an answer an older model gave)
         try:
+            if task_data.eval_mode:
+                raise LookupError("cache skipped in eval mode")
             # CAST(...AS TEXT), not a bare "=", because input_data is a json column -
             # Postgres rejects json = text directly ("operator does not exist: json =
             # unknown"), unlike SQLite which allowed it silently. CAST works on both.
@@ -200,6 +207,8 @@ async def submit_task(
                 final_response = data.get("result")
                 response_source = "cache"
                 logger.info("✅ Found EXACT cached response")
+        except LookupError:
+            pass
         except Exception as cache_error:
             # A failed query leaves a Postgres transaction "aborted" until rolled back -
             # every later query on this same session would fail too without this.
@@ -294,6 +303,9 @@ async def submit_task(
                         top_k=4 if is_duke else 4,
                         cross_agent=is_duke,
                     )
+                    retrieved_sources = [
+                        {"source": c.source_name, "persona_id": c.persona_id} for c in chunks
+                    ]
                     if chunks:
                         # Plain-text labels, not bracketed markers - this small local model
                         # tends to echo bracket-wrapped headers verbatim (the same failure
@@ -345,6 +357,15 @@ async def submit_task(
             except Exception as duke_error:
                 logger.error(f"❌ Duke Brain failed: {duke_error}")
                 final_response = "Error: System completely unavailable."
+
+        if task_data.eval_mode:
+            return {
+                "response": final_response,
+                "response_source": response_source,
+                "agent_name": target_agent,
+                "sources": retrieved_sources,
+                "status": "completed",
+            }
 
         # 3. Save to Database
         agent_record = db.query(Agent).filter(Agent.name == target_agent).first()

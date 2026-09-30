@@ -77,6 +77,11 @@ class TaskSubmission(BaseModel):
     # Knowledge upload. attachment_name's extension picks the extractor.
     attachment_base64: Optional[str] = None
     attachment_name: Optional[str] = Field(default=None, max_length=255)
+    # Admin-only accuracy-scorecard mode (requires X-Admin-Secret): skips the
+    # exact-match answer cache and saves nothing (no Task, no TrainingData),
+    # so test questions never pollute training data or get stale cached
+    # answers back, and returns which knowledge sources were retrieved.
+    eval_mode: bool = False
     model_config = {"populate_by_name": True}
 
     @field_validator("description")
