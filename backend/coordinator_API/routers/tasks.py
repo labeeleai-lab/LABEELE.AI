@@ -72,10 +72,15 @@ def _generate_with_lock(prompt: str, system_prompt: Optional[str] = None):
 # whole prompt (persona text included) silently chopped the last passage.
 MAX_REFERENCE_CHARS = 6000
 
-# A retrieved passage this similar to the question counts as a real match
-# worth citing; weaker ones are still given to the model as context but
-# aren't presented to the user as "the source" of the answer.
-CITE_MIN_SIMILARITY = 0.55
+# Citation tiers, calibrated on the 80-question scorecard (backend/evals,
+# after-2026-09-29): BGE similarities are compressed, so irrelevant passages
+# still score 0.58-0.67. At >= 0.68 none of the 5 no-answer "honesty"
+# questions cite anything while 60/75 book questions keep their sources.
+#   >= CITE_MIN_SIMILARITY          -> "Sources:" line
+#   between the two                 -> no footer (loosely related material)
+#   < NOT_FOUND_BELOW or no passage -> honest "not in my knowledge base" note
+CITE_MIN_SIMILARITY = 0.68
+NOT_FOUND_BELOW = 0.55
 
 _PART_SUFFIX = re.compile(r"\s*\(part \d+ of \d+\)\s*$", re.IGNORECASE)
 
@@ -97,6 +102,7 @@ def _citation_footer(chunks) -> str:
     never written by the model, so it can't cite a book that wasn't used.
     With no strong match, says so honestly instead."""
     titles = []
+    best = max((getattr(c, "similarity", 0.0) for c in chunks), default=0.0)
     for c in chunks:
         if getattr(c, "similarity", 0.0) >= CITE_MIN_SIMILARITY:
             t = _source_title(c.source_name)
@@ -104,8 +110,10 @@ def _citation_footer(chunks) -> str:
                 titles.append(t)
     if titles:
         return "\n\n📚 Sources: " + "; ".join(titles)
-    return ("\n\nℹ️ I couldn't find this in my knowledge base, so this answer is based on "
-            "general knowledge - please double-check anything important.")
+    if best < NOT_FOUND_BELOW:
+        return ("\n\nℹ️ I couldn't find this in my knowledge base, so this answer is based on "
+                "general knowledge - please double-check anything important.")
+    return ""
 
 
 # ✅ CREATE TASK ENDPOINT (legacy JWT)
